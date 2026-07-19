@@ -1,7 +1,7 @@
 # 📁 Project Structure
 
 ```text
-HireFlow-AI/
+HireFlow-AI
 │
 ├── docs/
 │   ├── PRD.md
@@ -14,49 +14,74 @@ HireFlow-AI/
 │   └── CONTRIBUTING.md
 │
 ├── frontend/
-│   ├── assets/
-│   │   ├── css/
-│   │   ├── js/
-│   │   ├── images/
-│   │   ├── icons/
-│   │   └── fonts/
 │   │
-│   ├── components/
-│   │   ├── navbar/
-│   │   ├── footer/
-│   │   ├── buttons/
-│   │   ├── cards/
-│   │   ├── modal/
-│   │   └── forms/
+│   ├── public/
 │   │
-│   ├── pages/
-│   │   ├── landing/
-│   │   ├── login/
-│   │   ├── signup/
-│   │   ├── dashboard/
-│   │   ├── workspace/
-│   │   ├── templates/
-│   │   ├── pricing/
-│   │   └── not-found/
+│   ├── src/
+│   │   │
+│   │   ├── assets/
+│   │   │
+│   │   ├── components/
+│   │   │   ├── common/
+│   │   │   ├── ui/
+│   │   │   ├── forms/
+│   │   │   ├── charts/
+│   │   │   └── resume/
+│   │   │
+│   │   ├── layouts/
+│   │   │
+│   │   ├── pages/
+│   │   │   ├── Landing/
+│   │   │   ├── Login/
+│   │   │   ├── Signup/
+│   │   │   ├── Dashboard/
+│   │   │   ├── Workspace/
+│   │   │   ├── Templates/
+│   │   │   ├── Pricing/
+│   │   │   └── NotFound/
+│   │   │
+│   │   ├── features/
+│   │   │   ├── auth/
+│   │   │   ├── dashboard/
+│   │   │   ├── resume/
+│   │   │   ├── templates/
+│   │   │   ├── ai/
+│   │   │   ├── github/
+│   │   │   ├── upload/
+│   │   │   ├── tailor/
+│   │   │   ├── ats/
+│   │   │   ├── health/
+│   │   │   ├── analytics/
+│   │   │   ├── assistant/
+│   │   │   ├── projects/
+│   │   │   ├── certificates/
+│   │   │   ├── export/
+│   │   │   └── settings/
+│   │   │
+│   │   ├── hooks/
+│   │   ├── context/
+│   │   ├── services/
+│   │   ├── utils/
+│   │   ├── routes/
+│   │   └── App.jsx
 │   │
-│   ├── services/
-│   ├── utils/
-│   ├── index.html
-│   └── app.js
+│   ├── package.json
+│   └── vite.config.js
 │
 ├── backend/
-│   ├── config/
 │   ├── controllers/
-│   ├── middlewares/
-│   ├── models/
 │   ├── routes/
 │   ├── services/
-│   ├── uploads/
+│   ├── middlewares/
+│   ├── models/
+│   ├── config/
 │   ├── utils/
-│   ├── server.js
+│   ├── uploads/
 │   ├── package.json
-│   └── .env
+│   └── server.js
 │
+├── .gitignore
 ├── README.md
-└── .gitignore
+├── LICENSE
+└── package.json
 ```
