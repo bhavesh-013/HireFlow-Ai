@@ -61,10 +61,6 @@ Deliverables
 - Authentication API
 - Health Check API
 
-- (MongoDB atlas)
-- user : hireflow
-- pass : hireflow@0000
-
 ---
 
 ## Remaining Members
