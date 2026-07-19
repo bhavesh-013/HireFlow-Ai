@@ -1,7 +1,7 @@
 # 📁 Project Structure
 
 ```text
-HireFlow-AI
+HireFlow-AI/
 │
 ├── docs/
 │   ├── PRD.md
@@ -14,74 +14,49 @@ HireFlow-AI
 │   └── CONTRIBUTING.md
 │
 ├── frontend/
+│   ├── assets/
+│   │   ├── css/
+│   │   ├── js/
+│   │   ├── images/
+│   │   ├── icons/
+│   │   └── fonts/
 │   │
-│   ├── public/
+│   ├── components/
+│   │   ├── navbar/
+│   │   ├── footer/
+│   │   ├── buttons/
+│   │   ├── cards/
+│   │   ├── modal/
+│   │   └── forms/
 │   │
-│   ├── src/
-│   │   │
-│   │   ├── assets/
-│   │   │
-│   │   ├── components/
-│   │   │   ├── common/
-│   │   │   ├── ui/
-│   │   │   ├── forms/
-│   │   │   ├── charts/
-│   │   │   └── resume/
-│   │   │
-│   │   ├── layouts/
-│   │   │
-│   │   ├── pages/
-│   │   │   ├── Landing/
-│   │   │   ├── Login/
-│   │   │   ├── Signup/
-│   │   │   ├── Dashboard/
-│   │   │   ├── Workspace/
-│   │   │   ├── Templates/
-│   │   │   ├── Pricing/
-│   │   │   └── NotFound/
-│   │   │
-│   │   ├── features/
-│   │   │   ├── auth/
-│   │   │   ├── dashboard/
-│   │   │   ├── resume/
-│   │   │   ├── templates/
-│   │   │   ├── ai/
-│   │   │   ├── github/
-│   │   │   ├── upload/
-│   │   │   ├── tailor/
-│   │   │   ├── ats/
-│   │   │   ├── health/
-│   │   │   ├── analytics/
-│   │   │   ├── assistant/
-│   │   │   ├── projects/
-│   │   │   ├── certificates/
-│   │   │   ├── export/
-│   │   │   └── settings/
-│   │   │
-│   │   ├── hooks/
-│   │   ├── context/
-│   │   ├── services/
-│   │   ├── utils/
-│   │   ├── routes/
-│   │   └── App.jsx
+│   ├── pages/
+│   │   ├── landing/
+│   │   ├── login/
+│   │   ├── signup/
+│   │   ├── dashboard/
+│   │   ├── workspace/
+│   │   ├── templates/
+│   │   ├── pricing/
+│   │   └── not-found/
 │   │
-│   ├── package.json
-│   └── vite.config.js
+│   ├── services/
+│   ├── utils/
+│   ├── index.html
+│   └── app.js
 │
 ├── backend/
+│   ├── config/
 │   ├── controllers/
-│   ├── routes/
-│   ├── services/
 │   ├── middlewares/
 │   ├── models/
-│   ├── config/
-│   ├── utils/
+│   ├── routes/
+│   ├── services/
 │   ├── uploads/
+│   ├── utils/
+│   ├── server.js
 │   ├── package.json
-│   └── server.js
+│   └── .env
 │
-├── .gitignore
 ├── README.md
-├── LICENSE
-└── package.json
+└── .gitignore
 ```
