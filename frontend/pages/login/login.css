@@ -92,7 +92,6 @@
     font-size:15.5px; line-height:1.6; color:var(--blue-light);
     max-width:400px; margin-bottom:44px;
   }
-
   .feature-list{display:flex; flex-direction:column; gap:20px; position:relative; z-index:1;}
   .feature-item{display:flex; align-items:flex-start; gap:14px;}
   .feature-icon{
