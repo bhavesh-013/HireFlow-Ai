@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<<<<<<< HEAD
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -38,3 +39,111 @@ Resume with AI</h1>
 <button>Import GitHub</button>
 </body>
 </html>
+=======
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ResumeAI — Build, Tailor & Optimize Your Resume with AI</title>
+  <meta name="description" content="Create ATS-friendly resumes, import GitHub projects, analyze ATS compatibility, compare against job descriptions, and improve interview readiness using AI.">
+  
+  <!-- Google Fonts & FontAwesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Application Stylesheets -->
+  <link rel="stylesheet" href="./assets/css/variables.css">
+  <link rel="stylesheet" href="./assets/css/globals.css">
+  <link rel="stylesheet" href="./assets/css/landing.css">
+  <link rel="stylesheet" href="./assets/css/components.css">
+  <link rel="stylesheet" href="./assets/css/builder.css">
+  <link rel="stylesheet" href="./assets/css/print.css">
+</head>
+<body>
+
+  <!-- Preview Deployment Top Banner (From Screenshot) -->
+  <div class="preview-banner" id="top-preview-banner">
+    <div>
+      <strong>Preview deployment</strong> - Use this page to preview your project and collaborate on feedback.
+    </div>
+    <button class="banner-close" id="btn-close-banner">&times;</button>
+  </div>
+
+  <!-- Main Navigation Header -->
+  <header class="navbar">
+    <div class="container navbar-container">
+      
+      <!-- Brand Logo -->
+      <a href="#" class="brand-logo" id="nav-brand-logo">
+        <div class="brand-icon">
+          <i class="fa-solid fa-sparkles"></i>
+        </div>
+        <span>Resume<span style="color: var(--accent-purple);">AI</span></span>
+      </a>
+
+      <!-- Navigation Links -->
+      <ul class="nav-links">
+        <li><a href="#" class="nav-link active" data-nav="landing">Home</a></li>
+        <li><a href="#" class="nav-link" data-nav="features">Features</a></li>
+        <li><a href="#" class="nav-link" data-nav="templates">Templates</a></li>
+        <li><a href="#" class="nav-link" data-nav="analyzer">ATS Analyzer</a></li>
+        <li><a href="#" class="nav-link" data-nav="github">GitHub Import</a></li>
+        <li><a href="#" class="nav-link" data-nav="projects">Projects</a></li>
+        <li><a href="#" class="nav-link" data-nav="versions">Version Manager</a></li>
+        <li><a href="#" class="nav-link" data-nav="pricing">Pricing</a></li>
+      </ul>
+
+      <!-- Navbar Right Actions & Theme Switch -->
+      <div class="nav-actions">
+        
+        <!-- Theme Toggle Switch -->
+        <div class="theme-switch" id="theme-toggle-switch" title="Toggle Light/Dark Theme">
+          <div class="theme-switch-handle">
+            <i class="fa-solid fa-moon"></i>
+          </div>
+        </div>
+
+        <button class="btn btn-ghost" id="btn-nav-signin">Sign In</button>
+        <button class="btn btn-primary-glow" id="btn-nav-getstarted">Get Started</button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- SPA Views Mount Root -->
+  <main id="app-root">
+    <!-- Dynamic View Content rendered by JS -->
+  </main>
+
+  <!-- AI Career Coach Drawer Host -->
+  <div id="coach-drawer-host"></div>
+
+  <!-- Auth Modal Host -->
+  <div id="auth-modal-host"></div>
+
+  <!-- Toast Notification Host -->
+  <div id="toast-container"></div>
+
+  <!-- Application Services & Modules -->
+  <script src="./services/state.js"></script>
+  <script src="./services/aiService.js"></script>
+
+  <!-- View Components -->
+  <script src="./pages/landing/landingView.js"></script>
+  <script src="./pages/builder/builderView.js"></script>
+  <script src="./pages/builder/conversationalBuilderView.js"></script>
+  <script src="./pages/analyzer/atsAnalyzerView.js"></script>
+  <script src="./pages/github/githubImportView.js"></script>
+  <script src="./pages/projects/projectLibraryView.js"></script>
+  <script src="./pages/versions/versionManagerView.js"></script>
+  
+  <script src="./components/careerCoachDrawer.js"></script>
+  <script src="./components/authModal.js"></script>
+
+  <!-- Main Application Entry Script -->
+  <script src="./app.js"></script>
+</body>
+</html>
+>>>>>>> develop

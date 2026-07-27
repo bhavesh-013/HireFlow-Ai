@@ -1,0 +1,138 @@
+/* ============================================
+   ResumeAI — Resume Builder & Live Preview Styles
+   ============================================ */
+
+.builder-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  padding: 2rem 0 4rem;
+  min-height: calc(100vh - var(--navbar-height));
+}
+
+@media (max-width: 1024px) {
+  .builder-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.builder-editor-pane {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.builder-preview-pane {
+  position: sticky;
+  top: calc(var(--navbar-height) + 1rem);
+  height: calc(100vh - var(--navbar-height) - 3rem);
+  overflow-y: auto;
+  background: #0d111d;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Paper Sheet Layout */
+.resume-paper {
+  width: 100%;
+  max-width: 650px;
+  min-height: 842px; /* Standard A4 ratio */
+  background: #ffffff;
+  color: #1e293b;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  padding: 2.5rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  transition: all var(--transition-fast);
+}
+
+.resume-paper h1 {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 0.2rem;
+}
+
+.resume-paper .paper-subtitle {
+  font-weight: 600;
+  color: #2563eb;
+  font-size: 0.95rem;
+  margin-bottom: 0.5rem;
+}
+
+.resume-paper .paper-contacts {
+  font-size: 0.75rem;
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 1rem;
+}
+
+.resume-paper .paper-section-title {
+  font-size: 0.85rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #0f172a;
+  border-bottom: 1.5px solid #0f172a;
+  padding-bottom: 0.2rem;
+  margin: 1.25rem 0 0.6rem;
+}
+
+.resume-paper .paper-item {
+  margin-bottom: 0.75rem;
+}
+
+.resume-paper .paper-item-header {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.resume-paper .paper-item-sub {
+  font-size: 0.78rem;
+  color: #475569;
+  font-style: italic;
+  margin-bottom: 0.3rem;
+}
+
+.resume-paper ul {
+  padding-left: 1.1rem;
+  margin-top: 0.3rem;
+}
+
+.resume-paper li {
+  margin-bottom: 0.25rem;
+}
+
+/* Template Themes */
+.resume-paper.template-modern {
+  border-left: 6px solid #8b5cf6;
+}
+
+.resume-paper.template-minimal {
+  font-family: 'Inter', sans-serif;
+  padding: 3rem;
+}
+
+.resume-paper.template-professional {
+  background: #fafafa;
+}
+
+.resume-paper.template-professional .paper-section-title {
+  color: #1e3a8a;
+  border-color: #1e3a8a;
+}

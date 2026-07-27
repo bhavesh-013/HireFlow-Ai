@@ -1,0 +1,33 @@
+/* ============================================
+   ResumeAI — Printable PDF Export Stylesheet
+   ============================================ */
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  #app-root, .navbar, .preview-banner, .coach-drawer, .coach-trigger-btn, #toast-container, .modal-backdrop {
+    display: none !important;
+  }
+
+  .resume-paper, .resume-paper * {
+    visibility: visible;
+  }
+
+  .resume-paper {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+}
