@@ -54,58 +54,123 @@ const App = {
 
   renderView(viewName) {
     const root = document.getElementById('app-root');
+    const landingHeader = document.querySelector('header.navbar');
+    const topBanner = document.getElementById('top-preview-banner');
+
     if (!root) return;
 
-    // Highlight Active Nav Link
-    document.querySelectorAll('.nav-link').forEach(link => {
-      const target = link.getAttribute('data-nav');
-      if (target === viewName || (viewName === 'landing' && target === 'landing')) {
-        link.classList.add('active');
-      } else {
-        link.classList.remove('active');
+    if (viewName === 'workspace') {
+      // Hide public landing page navbar & banner for dedicated workspace app
+      if (landingHeader) landingHeader.style.display = 'none';
+      if (topBanner) topBanner.style.display = 'none';
+
+      const state = Store.getState();
+      const subView = state.activeWorkspaceView || 'dashboard';
+
+      let subViewHtml = '';
+      let bindSubViewEvents = null;
+
+      switch (subView) {
+        case 'dashboard':
+          subViewHtml = DashboardView.render();
+          bindSubViewEvents = () => DashboardView.bindEvents();
+          break;
+        case 'build-editor':
+          subViewHtml = ResumeEditorView.render();
+          bindSubViewEvents = () => ResumeEditorView.bindEvents();
+          break;
+        case 'build-tailored':
+          subViewHtml = TailoredResumeView.render();
+          bindSubViewEvents = () => TailoredResumeView.bindEvents();
+          break;
+        case 'build-templates':
+          subViewHtml = TemplatesView.render();
+          bindSubViewEvents = () => TemplatesView.bindEvents();
+          break;
+        case 'analysis-ats':
+          subViewHtml = AtsAnalysisView.render();
+          bindSubViewEvents = () => AtsAnalysisView.bindEvents();
+          break;
+        case 'analysis-suggestions':
+          subViewHtml = AiSuggestionsView.render();
+          bindSubViewEvents = () => AiSuggestionsView.bindEvents();
+          break;
+        case 'analysis-jd':
+          subViewHtml = JdMatchView.render();
+          bindSubViewEvents = () => JdMatchView.bindEvents();
+          break;
+        case 'assistant':
+          subViewHtml = AiAssistantView.render();
+          bindSubViewEvents = () => AiAssistantView.bindEvents();
+          break;
+        case 'profile':
+          subViewHtml = ProfileView.render();
+          bindSubViewEvents = () => ProfileView.bindEvents();
+          break;
+        default:
+          subViewHtml = DashboardView.render();
+          bindSubViewEvents = () => DashboardView.bindEvents();
       }
-    });
 
-    // View Routing Switcher
-    switch (viewName) {
-      case 'landing':
-        root.innerHTML = LandingView.render() + this.renderFooter();
-        LandingView.bindEvents();
-        break;
+      root.innerHTML = WorkspaceLayout.render(subView, subViewHtml);
+      WorkspaceLayout.bindEvents();
+      if (bindSubViewEvents) bindSubViewEvents();
 
-      case 'builder':
-        root.innerHTML = BuilderView.render();
-        BuilderView.bindEvents();
-        break;
+    } else {
+      // Show landing header navbar
+      if (landingHeader) landingHeader.style.display = 'block';
 
-      case 'conversational':
-        root.innerHTML = ConversationalBuilderView.render();
-        ConversationalBuilderView.bindEvents();
-        break;
+      // Highlight Active Nav Link
+      document.querySelectorAll('.nav-link').forEach(link => {
+        const target = link.getAttribute('data-nav');
+        if (target === viewName || (viewName === 'landing' && target === 'landing')) {
+          link.classList.add('active');
+        } else {
+          link.classList.remove('active');
+        }
+      });
 
-      case 'analyzer':
-        root.innerHTML = AtsAnalyzerView.render();
-        AtsAnalyzerView.bindEvents();
-        break;
+      // View Routing Switcher for Landing/Other Views
+      switch (viewName) {
+        case 'landing':
+          root.innerHTML = LandingView.render() + this.renderFooter();
+          LandingView.bindEvents();
+          break;
 
-      case 'github':
-        root.innerHTML = GithubImportView.render();
-        GithubImportView.bindEvents();
-        break;
+        case 'builder':
+          root.innerHTML = BuilderView.render();
+          BuilderView.bindEvents();
+          break;
 
-      case 'projects':
-        root.innerHTML = ProjectLibraryView.render();
-        ProjectLibraryView.bindEvents();
-        break;
+        case 'conversational':
+          root.innerHTML = ConversationalBuilderView.render();
+          ConversationalBuilderView.bindEvents();
+          break;
 
-      case 'versions':
-        root.innerHTML = VersionManagerView.render();
-        VersionManagerView.bindEvents();
-        break;
+        case 'analyzer':
+          root.innerHTML = AtsAnalyzerView.render();
+          AtsAnalyzerView.bindEvents();
+          break;
 
-      default:
-        root.innerHTML = LandingView.render() + this.renderFooter();
-        LandingView.bindEvents();
+        case 'github':
+          root.innerHTML = GithubImportView.render();
+          GithubImportView.bindEvents();
+          break;
+
+        case 'projects':
+          root.innerHTML = ProjectLibraryView.render();
+          ProjectLibraryView.bindEvents();
+          break;
+
+        case 'versions':
+          root.innerHTML = VersionManagerView.render();
+          VersionManagerView.bindEvents();
+          break;
+
+        default:
+          root.innerHTML = LandingView.render() + this.renderFooter();
+          LandingView.bindEvents();
+      }
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -225,7 +290,7 @@ const App = {
     });
 
     document.getElementById('btn-nav-getstarted')?.addEventListener('click', () => {
-      Store.setView('builder');
+      Store.setWorkspaceView('dashboard');
     });
   }
 };

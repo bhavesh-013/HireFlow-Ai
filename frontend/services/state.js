@@ -8,7 +8,8 @@ const Store = {
 
   state: {
     theme: localStorage.getItem('resumeai_theme') || 'dark',
-    activeView: 'landing', // 'landing', 'builder', 'conversational', 'analyzer', 'github', 'projects', 'versions'
+    activeView: 'landing', // 'landing', 'workspace'
+    activeWorkspaceView: 'dashboard', // 'dashboard', 'build-editor', 'build-tailored', 'build-templates', 'analysis-ats', 'analysis-suggestions', 'analysis-jd', 'assistant', 'profile'
     userProfileType: 'experienced', // 'student', 'fresher', 'experienced'
     activeTemplate: 'ats', // 'ats', 'modern', 'minimal', 'professional'
     
@@ -132,6 +133,12 @@ const Store = {
 
   setView(viewName) {
     this.state.activeView = viewName;
+    this.notify();
+  },
+
+  setWorkspaceView(subView) {
+    this.state.activeView = 'workspace';
+    this.state.activeWorkspaceView = subView;
     this.notify();
   },
 

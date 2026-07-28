@@ -83,6 +83,24 @@
   /* ── Layout Sizes ── */
   --navbar-height: 76px;
   --container-max: 1280px;
+
+  /* ── Workspace SaaS UI Colors (Matching Reference Screenshots) ── */
+  --sidebar-bg: #091322;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-text: #94a3b8;
+  --sidebar-text-hover: #e2e8f0;
+  --sidebar-active-bg: #1b2a41;
+  --sidebar-active-text: #ffffff;
+  --sidebar-subitem-hover: rgba(255, 255, 255, 0.05);
+
+  --workspace-bg: #f4f7fb;
+  --workspace-header-bg: #ffffff;
+  --workspace-header-border: #e2e8f0;
+  --workspace-card-bg: #ffffff;
+  --workspace-card-border: #e2e8f0;
+  --workspace-text-title: #0f172a;
+  --workspace-text-sub: #475569;
+  --workspace-pill-bg: #f1f5f9;
 }
 
 /* Light Theme Overrides */
