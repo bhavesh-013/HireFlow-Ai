@@ -312,3 +312,910 @@ textarea.form-control {
   font-weight: 800;
   color: #fff;
 }
+
+/* ============================================
+   Workspace Application Layout & SaaS UI Styles
+   (Matching Reference Screenshots Exact Design)
+   ============================================ */
+
+/* App Workspace Container */
+.app-workspace-layout {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--workspace-bg, #f4f7fb);
+  font-family: var(--font-primary);
+  color: #0f172a;
+}
+
+/* ── Navy Left Sidebar ── */
+.ws-sidebar {
+  width: 256px;
+  background-color: var(--sidebar-bg, #091322);
+  color: var(--sidebar-text, #94a3b8);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 100;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Brand Header */
+.ws-sidebar-brand {
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ws-brand-avatar {
+  width: 36px;
+  height: 36px;
+  background: #ffffff;
+  color: #091322;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.ws-brand-info h2 {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.ws-brand-info p {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Sidebar Navigation */
+.ws-sidebar-nav {
+  flex: 1;
+  padding: 1.25rem 0.85rem;
+  overflow-y: auto;
+}
+
+.ws-nav-group-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #475569;
+  padding: 0.75rem 0.85rem 0.35rem 0.85rem;
+}
+
+.ws-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.7rem 0.9rem;
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  margin-bottom: 0.25rem;
+  cursor: pointer;
+}
+
+.ws-nav-item:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ws-nav-item.active {
+  background-color: #1b2a41 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+.ws-nav-item i.ws-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.ws-nav-accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.ws-chevron {
+  font-size: 0.75rem;
+  transition: transform 0.25s ease;
+}
+
+.ws-nav-group.expanded .ws-chevron {
+  transform: rotate(180deg);
+}
+
+.ws-nav-subitems {
+  padding-left: 1.25rem;
+  display: none;
+}
+
+.ws-nav-group.expanded .ws-nav-subitems {
+  display: block;
+}
+
+.ws-nav-subitem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  color: #8392ab;
+  text-decoration: none;
+  font-size: 0.84rem;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  margin-bottom: 0.2rem;
+  cursor: pointer;
+}
+
+.ws-nav-subitem:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ws-nav-subitem.active {
+  background-color: #1b2a41 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+/* Sidebar Profile Footer */
+.ws-sidebar-footer {
+  padding: 1rem 1rem 1.25rem 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ws-user-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.ws-user-avatar {
+  width: 34px;
+  height: 34px;
+  background: #1e293b;
+  color: #f1f5f9;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ws-user-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-user-name {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ws-user-sub {
+  font-size: 0.7rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.ws-btn-logout {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  padding: 0.4rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ws-btn-logout:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* ── Workspace Main Area & Top Navbar ── */
+.ws-main-wrapper {
+  flex: 1;
+  margin-left: 256px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #f4f7fb;
+  position: relative;
+}
+
+.ws-topbar {
+  height: 68px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+.ws-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ws-hamburger-btn {
+  display: none;
+  background: transparent;
+  border: none;
+  color: #475569;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.ws-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.55rem 1rem;
+  width: 360px;
+  transition: border-color 0.2s ease;
+}
+
+.ws-search-box:focus-within {
+  border-color: #3b82f6;
+  background: #ffffff;
+}
+
+.ws-search-box i {
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.ws-search-box input {
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  font-size: 0.88rem;
+  color: #0f172a;
+}
+
+.ws-search-box input::placeholder {
+  color: #94a3b8;
+}
+
+.ws-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.ws-btn-landing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.95rem;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #1e293b;
+  font-weight: 600;
+  font-size: 0.84rem;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.ws-btn-landing:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.ws-topbar-icon-btn {
+  background: transparent;
+  border: none;
+  color: #475569;
+  font-size: 1.1rem;
+  position: relative;
+  cursor: pointer;
+  padding: 0.4rem;
+}
+
+.ws-topbar-icon-btn .badge-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  background-color: #3b82f6;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+}
+
+.ws-topbar-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  cursor: pointer;
+}
+
+.ws-topbar-avatar {
+  width: 32px;
+  height: 32px;
+  background: #0f172a;
+  color: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.ws-topbar-userinfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-topbar-username {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.1;
+}
+
+.ws-topbar-userrole {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+/* Workspace Page Content Area */
+.ws-content-container {
+  flex: 1;
+  padding: 2.25rem 2.5rem 5rem 2.5rem;
+  max-width: 1320px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ws-page-header {
+  margin-bottom: 2rem;
+}
+
+.ws-page-title {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+}
+
+.ws-page-sub {
+  font-size: 0.95rem;
+  color: #475569;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Workspace SaaS Card Component */
+.ws-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 1.75rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.ws-card-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Form Controls inside Workspace */
+.ws-input {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: #0f172a;
+  width: 100%;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.ws-input:focus {
+  border-color: #3b82f6;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.ws-textarea {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: #0f172a;
+  width: 100%;
+  outline: none;
+  resize: vertical;
+  transition: all 0.2s ease;
+}
+
+.ws-textarea:focus {
+  border-color: #3b82f6;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.ws-btn-primary {
+  background-color: #0f172a;
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.75rem 1.4rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ws-btn-primary:hover {
+  background-color: #1e293b;
+  transform: translateY(-1px);
+}
+
+.ws-btn-secondary {
+  background-color: #ffffff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0.75rem 1.4rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ws-btn-secondary:hover {
+  background-color: #f8fafc;
+  border-color: #94a3b8;
+}
+
+/* ── Toggle Switch Component (Profile & Settings) ── */
+.ws-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ws-toggle-row:last-child {
+  border-bottom: none;
+}
+
+.ws-toggle-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.ws-toggle-icon {
+  font-size: 1.1rem;
+  color: #475569;
+  margin-top: 0.1rem;
+}
+
+.ws-toggle-label {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #0f172a;
+  margin-bottom: 0.15rem;
+}
+
+.ws-toggle-desc {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.ws-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.ws-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ws-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e1;
+  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 24px;
+}
+
+.ws-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 50%;
+}
+
+.ws-switch input:checked + .ws-slider {
+  background-color: #3b82f6;
+}
+
+.ws-switch input:checked + .ws-slider:before {
+  transform: translateX(20px);
+}
+
+/* ── ATS Section Score Progress Bars ── */
+.ws-score-item {
+  margin-bottom: 1.1rem;
+}
+
+.ws-score-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.ws-score-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.ws-score-pct {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.ws-progress-track {
+  width: 100%;
+  height: 8px;
+  background-color: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ws-progress-fill {
+  height: 100%;
+  background-color: #3b82f6;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── AI Suggestions Cards ── */
+.ws-pill-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.35rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  margin-bottom: 2rem;
+  width: fit-content;
+}
+
+.ws-tab-btn {
+  padding: 0.55rem 1.1rem;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ws-tab-btn:hover {
+  color: #0f172a;
+}
+
+.ws-tab-btn.active {
+  background: #f1f5f9;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.ws-suggestion-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+  transition: all 0.25s ease;
+}
+
+.ws-suggestion-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.ws-suggestion-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ws-suggestion-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ws-suggestion-why {
+  font-size: 0.88rem;
+  color: #475569;
+}
+
+.ws-suggestion-impact {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #0284c7;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* ── AI Career Coach Workspace ── */
+.ws-coach-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.75rem;
+  min-height: 560px;
+}
+
+.ws-coach-history-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-history-item {
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  margin-bottom: 0.35rem;
+}
+
+.ws-history-item:hover {
+  background: #f8fafc;
+}
+
+.ws-history-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ws-history-time {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.ws-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 2rem;
+}
+
+.ws-chip-item {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  padding: 0.55rem 0.95rem;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s ease;
+}
+
+.ws-chip-item:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.ws-prompt-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.ws-prompt-card-btn {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.25rem;
+  text-align: left;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1.4;
+}
+
+.ws-prompt-card-btn:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+/* ── Bottom Floating Bar (Matching Reference Screenshots 1, 2, 3, 5) ── */
+.ws-floating-toolbar {
+  position: fixed;
+  bottom: 24px;
+  left: calc(256px + (100% - 256px) / 2);
+  transform: translateX(-50%);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
+  z-index: 80;
+}
+
+.ws-floating-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0.35rem;
+  transition: color 0.2s ease;
+}
+
+.ws-floating-btn:hover {
+  color: #0f172a;
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 992px) {
+  .ws-sidebar {
+    transform: translateX(-100%);
+  }
+
+  .ws-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .ws-main-wrapper {
+    margin-left: 0;
+  }
+
+  .ws-hamburger-btn {
+    display: block;
+  }
+
+  .ws-floating-toolbar {
+    left: 50%;
+  }
+
+  .ws-coach-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-prompt-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .ws-topbar {
+    padding: 0 1rem;
+  }
+
+  .ws-search-box {
+    width: 180px;
+  }
+
+  .ws-content-container {
+    padding: 1.25rem 1rem 5rem 1rem;
+  }
+
+  .ws-suggestion-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
