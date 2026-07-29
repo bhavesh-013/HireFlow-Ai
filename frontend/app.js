@@ -1,301 +1,544 @@
 /**
- * ResumeAI — Main Application Controller & SPA Router
- * Initializes reactive state, navigation handlers, theme toggle, and view rendering.
+ * HireFlow AI — Main Application Controller
+ * Part 1
  */
 
-// Toast Notifications Helper
+// ===============================
+// Toast Notification Helper
+// ===============================
 const Toast = {
-  show(message, type = 'info') {
-    const container = document.getElementById('toast-container');
+  show(message, type = "info") {
+    const container = document.getElementById("toast-container");
     if (!container) return;
 
-    const toast = document.createElement('div');
+    const toast = document.createElement("div");
     toast.className = `toast toast-${type}`;
-    
-    let icon = 'fa-info-circle';
-    if (type === 'success') icon = 'fa-circle-check';
-    if (type === 'warning') icon = 'fa-triangle-exclamation';
 
-    toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
+    let icon = "fa-info-circle";
+
+    if (type === "success") icon = "fa-circle-check";
+    if (type === "warning") icon = "fa-triangle-exclamation";
+    if (type === "error") icon = "fa-circle-xmark";
+
+    toast.innerHTML = `
+        <i class="fa-solid ${icon}"></i>
+        <span>${message}</span>
+    `;
+
     container.appendChild(toast);
 
     setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateX(100%)';
-      toast.style.transition = 'all 0.3s ease';
+      toast.style.opacity = "0";
+      toast.style.transform = "translateX(100%)";
+
       setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    }, 3000);
   }
 };
 
-// Main App Controller
+// ===============================
+// Main Application
+// ===============================
 const App = {
+
   init() {
-    console.log('🚀 Initializing ResumeAI Frontend Application...');
 
-    // Restore saved theme
-    const theme = Store.getState().theme;
-    document.documentElement.setAttribute('data-theme', theme);
+    console.log("🚀 Initializing HireFlow AI...");
 
-    // Render Initial View
+    const theme = Store.getState().theme || "light";
+
+    document.documentElement.setAttribute("data-theme", theme);
+
     this.renderView(Store.getState().activeView);
 
-    // Render Fixed Components
     this.renderCoachDrawer();
 
-    // Subscribe to State Changes
     Store.subscribe((state) => {
       this.renderView(state.activeView);
     });
 
-    // Global Event Listeners
     this.bindGlobalEvents();
+
   },
 
+  // ===============================
+  // Render Views
+  // ===============================
   renderView(viewName) {
-    const root = document.getElementById('app-root');
-    const landingHeader = document.querySelector('header.navbar');
-    const topBanner = document.getElementById('top-preview-banner');
+
+    const root = document.getElementById("app-root");
+
+    const landingHeader = document.querySelector("header.navbar");
+
+    const topBanner = document.getElementById("top-preview-banner");
 
     if (!root) return;
 
-    if (viewName === 'workspace') {
-      // Hide public landing page navbar & banner for dedicated workspace app
-      if (landingHeader) landingHeader.style.display = 'none';
-      if (topBanner) topBanner.style.display = 'none';
+    // ===========================================
+    // Workspace
+    // ===========================================
+
+    if (viewName === "workspace") {
+
+      if (landingHeader) landingHeader.style.display = "none";
+      if (topBanner) topBanner.style.display = "none";
 
       const state = Store.getState();
-      const subView = state.activeWorkspaceView || 'dashboard';
 
-      let subViewHtml = '';
+      const subView = state.activeWorkspaceView || "dashboard";
+
+      // Protected Routes
+      const protectedViews = [
+        "dashboard",
+        "profile",
+        "settings",
+        "saved-resumes",
+        "history",
+        "analytics"
+      ];
+
+      if (
+        protectedViews.includes(subView) &&
+        !state.user
+      ) {
+
+        window.location.href = "./pages/login/login.html";
+        return;
+
+      }
+
+      let subViewHtml = "";
       let bindSubViewEvents = null;
 
       switch (subView) {
-        case 'dashboard':
+
+        case "dashboard":
           subViewHtml = DashboardView.render();
-          bindSubViewEvents = () => DashboardView.bindEvents();
+          bindSubViewEvents = DashboardView.bindEvents;
           break;
-        case 'build-editor':
-          subViewHtml = ResumeEditorView.render();
-          bindSubViewEvents = () => ResumeEditorView.bindEvents();
-          break;
-        case 'build-tailored':
-          subViewHtml = TailoredResumeView.render();
-          bindSubViewEvents = () => TailoredResumeView.bindEvents();
-          break;
-        case 'build-templates':
-          subViewHtml = TemplatesView.render();
-          bindSubViewEvents = () => TemplatesView.bindEvents();
-          break;
-        case 'analysis-ats':
-          subViewHtml = AtsAnalysisView.render();
-          bindSubViewEvents = () => AtsAnalysisView.bindEvents();
-          break;
-        case 'analysis-suggestions':
-          subViewHtml = AiSuggestionsView.render();
-          bindSubViewEvents = () => AiSuggestionsView.bindEvents();
-          break;
-        case 'analysis-jd':
-          subViewHtml = JdMatchView.render();
-          bindSubViewEvents = () => JdMatchView.bindEvents();
-          break;
-        case 'assistant':
-          subViewHtml = AiAssistantView.render();
-          bindSubViewEvents = () => AiAssistantView.bindEvents();
-          break;
-        case 'profile':
+
+        case "profile":
           subViewHtml = ProfileView.render();
-          bindSubViewEvents = () => ProfileView.bindEvents();
+          bindSubViewEvents = ProfileView.bindEvents;
           break;
+
+        case "build-editor":
+          subViewHtml = ResumeEditorView.render();
+          bindSubViewEvents = ResumeEditorView.bindEvents;
+          break;
+
+        case "build-tailored":
+          subViewHtml = TailoredResumeView.render();
+          bindSubViewEvents = TailoredResumeView.bindEvents;
+          break;
+
+        case "build-templates":
+          subViewHtml = TemplatesView.render();
+          bindSubViewEvents = TemplatesView.bindEvents;
+          break;
+
+        case "analysis-ats":
+          subViewHtml = AtsAnalysisView.render();
+          bindSubViewEvents = AtsAnalysisView.bindEvents;
+          break;
+
+        case "analysis-suggestions":
+          subViewHtml = AiSuggestionsView.render();
+          bindSubViewEvents = AiSuggestionsView.bindEvents;
+          break;
+
+        case "analysis-jd":
+          subViewHtml = JdMatchView.render();
+          bindSubViewEvents = JdMatchView.bindEvents;
+          break;
+
+        case "assistant":
+          subViewHtml = AiAssistantView.render();
+          bindSubViewEvents = AiAssistantView.bindEvents;
+          break;
+
         default:
           subViewHtml = DashboardView.render();
-          bindSubViewEvents = () => DashboardView.bindEvents();
+          bindSubViewEvents = DashboardView.bindEvents;
+
       }
 
-      root.innerHTML = WorkspaceLayout.render(subView, subViewHtml);
+      root.innerHTML = WorkspaceLayout.render(
+        subView,
+        subViewHtml
+      );
+
       WorkspaceLayout.bindEvents();
-      if (bindSubViewEvents) bindSubViewEvents();
 
-    } else {
-      // Show landing header navbar
-      if (landingHeader) landingHeader.style.display = 'block';
+      if (bindSubViewEvents)
+        bindSubViewEvents();
 
-      // Highlight Active Nav Link
-      document.querySelectorAll('.nav-link').forEach(link => {
-        const target = link.getAttribute('data-nav');
-        if (target === viewName || (viewName === 'landing' && target === 'landing')) {
-          link.classList.add('active');
-        } else {
-          link.classList.remove('active');
-        }
+    }
+
+    // ===========================================
+    // Public Pages
+    // ===========================================
+
+    else {
+
+      if (landingHeader)
+        landingHeader.style.display = "block";
+
+      document.querySelectorAll(".nav-link").forEach((link) => {
+
+        if (link.dataset.nav === viewName)
+
+          link.classList.add("active");
+
+        else
+
+          link.classList.remove("active");
+
       });
 
-      // View Routing Switcher for Landing/Other Views
       switch (viewName) {
-        case 'landing':
-          root.innerHTML = LandingView.render() + this.renderFooter();
+
+        case "landing":
+
+          root.innerHTML =
+            LandingView.render() +
+            this.renderFooter();
+
           LandingView.bindEvents();
+
           break;
 
-        case 'builder':
+        case "builder":
+
           root.innerHTML = BuilderView.render();
+
           BuilderView.bindEvents();
+
           break;
 
-        case 'conversational':
-          root.innerHTML = ConversationalBuilderView.render();
-          ConversationalBuilderView.bindEvents();
+        case "templates":
+
+          root.innerHTML = TemplatesView.render();
+
+          TemplatesView.bindEvents();
+
           break;
 
-        case 'analyzer':
-          root.innerHTML = AtsAnalyzerView.render();
-          AtsAnalyzerView.bindEvents();
+        case "analyzer":
+
+          root.innerHTML = AtsAnalysisView.render();
+
+          AtsAnalysisView.bindEvents();
+
           break;
 
-        case 'github':
-          root.innerHTML = GithubImportView.render();
-          GithubImportView.bindEvents();
+        case "suggestions":
+
+          root.innerHTML = AiSuggestionsView.render();
+
+          AiSuggestionsView.bindEvents();
+
           break;
 
-        case 'projects':
-          root.innerHTML = ProjectLibraryView.render();
-          ProjectLibraryView.bindEvents();
+        case "jdmatch":
+
+          root.innerHTML = JdMatchView.render();
+
+          JdMatchView.bindEvents();
+
           break;
 
-        case 'versions':
-          root.innerHTML = VersionManagerView.render();
-          VersionManagerView.bindEvents();
+        case "assistant":
+
+          root.innerHTML = AiAssistantView.render();
+
+          AiAssistantView.bindEvents();
+
           break;
 
         default:
-          root.innerHTML = LandingView.render() + this.renderFooter();
+
+          root.innerHTML =
+            LandingView.render() +
+            this.renderFooter();
+
           LandingView.bindEvents();
+
       }
+
     }
 
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  },
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth"
+    });
 
+  },
+    // ===============================
+  // Career Coach Drawer
+  // ===============================
   renderCoachDrawer() {
-    const host = document.getElementById('coach-drawer-host');
-    if (host) {
-      host.innerHTML = CareerCoachDrawer.render();
-      CareerCoachDrawer.bindEvents();
-    }
+
+    const host = document.getElementById("coach-drawer-host");
+
+    if (!host) return;
+
+    host.innerHTML = CareerCoachDrawer.render();
+
+    CareerCoachDrawer.bindEvents();
+
   },
 
+  // ===============================
+  // Footer
+  // ===============================
   renderFooter() {
+
     return `
       <footer class="footer">
+
         <div class="container">
+
           <div class="footer-grid">
-            
+
             <div class="footer-col">
-              <div class="brand-logo" style="margin-bottom: 1rem;">
-                <div class="brand-icon"><i class="fa-solid fa-sparkles"></i></div>
-                <span>Resume<span style="color: var(--accent-purple);">AI</span></span>
+
+              <div class="brand-logo">
+
+                <div class="brand-icon">
+                  <i class="fa-solid fa-briefcase"></i>
+                </div>
+
+                <span>
+                  HireFlow
+                  <span style="color: var(--accent-blue);">
+                    AI
+                  </span>
+                </span>
+
               </div>
-              <p style="max-width: 320px; line-height: 1.6; margin-bottom: 1.5rem;">
-                Empowering job seekers worldwide with AI-driven resume optimization, ATS matching, and GitHub project integration.
+
+              <p>
+                Build ATS-friendly resumes, tailor every application,
+                analyse resume performance and accelerate your career
+                using AI.
               </p>
+
             </div>
 
             <div class="footer-col">
-              <h4>Product</h4>
-              <ul class="footer-links">
-                <li><a href="#" data-nav="builder" class="footer-nav-link">AI Resume Builder</a></li>
-                <li><a href="#" data-nav="conversational" class="footer-nav-link">Conversational AI Chat</a></li>
-                <li><a href="#" data-nav="analyzer" class="footer-nav-link">ATS & JD Analyzer</a></li>
-                <li><a href="#" data-nav="github" class="footer-nav-link">Smart GitHub Import</a></li>
-              </ul>
-            </div>
 
-            <div class="footer-col">
               <h4>Features</h4>
+
               <ul class="footer-links">
-                <li><a href="#" data-nav="projects" class="footer-nav-link">Project Recommendation</a></li>
-                <li><a href="#" data-nav="versions" class="footer-nav-link">Version Manager</a></li>
-                <li><a href="#" data-nav="templates" class="footer-nav-link">ATS Templates</a></li>
-                <li><a href="#" data-nav="pricing" class="footer-nav-link">Pricing Plans</a></li>
+
+                <li>
+                  <a href="#" data-nav="builder" class="footer-nav-link">
+                    Build Resume
+                  </a>
+                </li>
+
+                <li>
+                  <a href="#" data-nav="templates" class="footer-nav-link">
+                    Templates
+                  </a>
+                </li>
+
+                <li>
+                  <a href="#" data-nav="analyzer" class="footer-nav-link">
+                    ATS Analysis
+                  </a>
+                </li>
+
+                <li>
+                  <a href="#" data-nav="assistant" class="footer-nav-link">
+                    AI Assistant
+                  </a>
+                </li>
+
               </ul>
+
             </div>
 
             <div class="footer-col">
-              <h4>Connect</h4>
+
+              <h4>Account</h4>
+
               <ul class="footer-links">
-                <li><a href="https://github.com" target="_blank"><i class="fa-brands fa-github"></i> GitHub</a></li>
-                <li><a href="https://linkedin.com" target="_blank"><i class="fa-brands fa-linkedin"></i> LinkedIn</a></li>
-                <li><a href="https://twitter.com" target="_blank"><i class="fa-brands fa-x-twitter"></i> Twitter</a></li>
+
+                <li>
+                  <a href="./pages/login/login.html">
+                    Sign In
+                  </a>
+                </li>
+
+                <li>
+                  <a href="./pages/signup/signup.html">
+                    Create Account
+                  </a>
+                </li>
+
               </ul>
+
             </div>
 
           </div>
 
           <div class="footer-bottom">
-            <div>© 2026 ResumeAI. All rights reserved. Designed with modern web standards.</div>
-            <div style="display: flex; gap: 1.5rem;">
-              <a href="#">Privacy Policy</a>
-              <a href="#">Terms of Service</a>
-            </div>
+
+            <span>
+              © 2026 HireFlow AI. All Rights Reserved.
+            </span>
+
           </div>
+
         </div>
+
       </footer>
     `;
+
   },
 
+  // ===============================
+  // Global Events
+  // ===============================
   bindGlobalEvents() {
-    // Nav Brand Logo click
-    document.getElementById('nav-brand-logo')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      Store.setView('landing');
-    });
 
-    // Banner close button
-    document.getElementById('btn-close-banner')?.addEventListener('click', () => {
-      const banner = document.getElementById('top-preview-banner');
-      if (banner) banner.style.display = 'none';
-    });
+    // Brand Logo
+    document
+      .getElementById("nav-brand-logo")
+      ?.addEventListener("click", (e) => {
 
-    // Theme Switch Pill click
-    document.getElementById('theme-toggle-switch')?.addEventListener('click', () => {
-      const current = Store.getState().theme;
-      const nextTheme = current === 'dark' ? 'light' : 'dark';
-      Store.setTheme(nextTheme);
-      Toast.show(`Switched to ${nextTheme.toUpperCase()} theme`, 'info');
-    });
-
-    // Header Nav links
-    document.querySelectorAll('.nav-link, .footer-nav-link').forEach(link => {
-      link.addEventListener('click', (e) => {
         e.preventDefault();
-        const target = link.getAttribute('data-nav');
-        if (target === 'features' || target === 'templates' || target === 'pricing') {
-          if (Store.getState().activeView !== 'landing') {
-            Store.setView('landing');
-            setTimeout(() => {
-              document.getElementById(target)?.scrollIntoView({ behavior: 'smooth' });
-            }, 100);
-          } else {
-            document.getElementById(target)?.scrollIntoView({ behavior: 'smooth' });
-          }
-        } else {
-          Store.setView(target);
-        }
+
+        Store.setView("landing");
+
       });
-    });
 
-    // Auth Buttons
-    document.getElementById('btn-nav-signin')?.addEventListener('click', () => {
-      AuthModal.open('login');
-    });
+    // Close Banner
+    document
+      .getElementById("btn-close-banner")
+      ?.addEventListener("click", () => {
 
-    document.getElementById('btn-nav-getstarted')?.addEventListener('click', () => {
-      Store.setWorkspaceView('dashboard');
-    });
+        document
+          .getElementById("top-preview-banner")
+          ?.remove();
+
+      });
+
+    // Theme Toggle
+    document
+      .getElementById("theme-toggle-switch")
+      ?.addEventListener("click", () => {
+
+        const current = Store.getState().theme;
+
+        const next =
+          current === "dark"
+            ? "light"
+            : "dark";
+
+        Store.setTheme(next);
+
+        Toast.show(
+          `Switched to ${next.toUpperCase()} mode`,
+          "success"
+        );
+
+      });
+
+    // Navigation
+    document
+      .querySelectorAll(".nav-link, .footer-nav-link")
+      .forEach((link) => {
+
+        link.addEventListener("click", (e) => {
+
+          e.preventDefault();
+
+          const target = link.dataset.nav;
+
+          if (!target) return;
+
+          Store.setView(target);
+
+        });
+
+      });
+
+    // Sign In
+    document
+      .getElementById("btn-nav-signin")
+      ?.addEventListener("click", () => {
+
+        window.location.href =
+          "./pages/login/login.html";
+
+      });
+
+    // Build Resume
+    document
+      .getElementById("btn-nav-getstarted")
+      ?.addEventListener("click", () => {
+
+        Store.setView("builder");
+
+      });
+
+  },
+  };
+
+// ===============================
+// Application Startup
+// ===============================
+
+// Restore route from URL hash (optional)
+window.addEventListener("hashchange", () => {
+
+  const hash = window.location.hash.replace("#", "");
+
+  if (!hash) {
+
+    Store.setView("landing");
+    return;
+
   }
-};
 
-// Start application on DOM Ready
-document.addEventListener('DOMContentLoaded', () => {
+  const publicViews = [
+    "landing",
+    "builder",
+    "templates",
+    "analyzer",
+    "suggestions",
+    "jdmatch",
+    "assistant",
+    "workspace"
+  ];
+
+  if (publicViews.includes(hash)) {
+
+    Store.setView(hash);
+
+  }
+
+});
+
+// Initialize App
+document.addEventListener("DOMContentLoaded", () => {
+
+  // Default Route
+  if (!window.location.hash) {
+
+    Store.setView("landing");
+
+  } else {
+
+    const hash = window.location.hash.replace("#", "");
+
+    Store.setView(hash);
+
+  }
+
   App.init();
+
 });

@@ -1,156 +1,1205 @@
-/**
- * ResumeAI / HireFlow AI — Landing View Component
- * Renders the landing page content and binds CTA buttons to open the Workspace.
- */
-
 const LandingView = {
+
   render() {
+
     return `
-      <div class="wrap">
-        <header class="top-header" style="padding-top: 2rem;">
-          <div class="top-header-row" style="display: flex; justify-content: space-between; align-items: flex-end;">
-            <div>
-              <h1 class="wordmark fade-up d1" style="font-size: 2.5rem; font-weight: 900; letter-spacing: -0.03em; margin: 0; color: var(--text-primary, #ffffff);">HIREFLOW AI</h1>
-              <p class="tagline fade-up d2" style="color: var(--accent-blue, #3b82f6); font-weight: 700; margin-top: 0.25rem;">Your AI Career Workspace</p>
-            </div>
-            <div class="top-meta fade-up d3" style="text-align: right; font-size: 0.8rem; color: var(--text-secondary, #94a3b8); line-height: 1.5;">
-              RESUME · ATS · INTERVIEW<br>
-              BUILT FOR STUDENTS &amp; PROFESSIONALS<br>
-              HELLO@HIREFLOW.AI
-            </div>
-          </div>
-        </header>
 
-        <div class="divider-line div-delay-1" style="height: 1px; background: rgba(255,255,255,0.1); margin: 1.5rem 0;"></div>
+<nav class="scroll-progress" aria-label="Page sections">
+  <a href="#profile" class="scroll-progress-item" data-section="profile">
+    <span class="scroll-progress-dot"></span>
+    <span class="scroll-progress-label">Profile</span>
+  </a>
 
-        <nav class="nav-row nav-slide-in" style="display: flex; gap: 1rem; align-items: center; font-weight: 600; font-size: 0.9rem;">
-          <a href="#" data-nav-btn="landing">Home</a><span class="nav-sep">/</span>
-          <a href="#" data-ws-btn="build-templates">Templates</a><span class="nav-sep">/</span>
-          <a href="#" data-ws-btn="assistant">AI Assistant</a><span class="nav-sep">/</span>
-          <a href="#" id="landing-btn-workspace" style="color: #3b82f6;">Open AI Workspace ↗</a>
-        </nav>
+  <a href="#skills" class="scroll-progress-item" data-section="skills">
+    <span class="scroll-progress-dot"></span>
+    <span class="scroll-progress-label">Skills</span>
+  </a>
 
-        <div class="divider-line div-delay-2" style="height: 1px; background: rgba(255,255,255,0.1); margin: 1.5rem 0;"></div>
+  <a href="#experience" class="scroll-progress-item" data-section="experience">
+    <span class="scroll-progress-dot"></span>
+    <span class="scroll-progress-label">Experience</span>
+  </a>
 
-        <main style="padding-bottom: 4rem;">
-          <!-- 01 PROFILE / HERO -->
-          <section id="profile" style="margin-bottom: 4rem;">
-            <div class="section-heading-row" style="margin-bottom: 2rem;">
-              <span class="section-num reveal-kicker" style="color: #3b82f6; font-weight: 800;">01</span>
-              <h2 class="section-title reveal-heading" style="font-size: 2rem; font-weight: 800; display: inline-block; margin-left: 0.5rem;">PROFILE & WORKSPACE</h2>
-            </div>
+  <a href="#projects" class="scroll-progress-item" data-section="projects">
+    <span class="scroll-progress-dot"></span>
+    <span class="scroll-progress-label">Projects</span>
+  </a>
 
-            <div class="profile-grid" style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 2.5rem; align-items: center;">
-              <div class="profile-copy reveal">
-                <p style="font-size: 1.1rem; line-height: 1.7; color: var(--text-secondary, #cbd5e1); margin-bottom: 2rem;">
-                  HireFlow AI helps you create resumes, analyse ATS scores, tailor documents for specific jobs and prepare for interviews — all inside one calm, focused workspace. No scattered tools, no guesswork: write, score, refine and export from the same place.
-                </p>
-                <div class="profile-actions" style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                  <button class="btn btn-primary" id="btn-landing-build" style="background: #3b82f6; color: #fff; border: none; border-radius: 12px; padding: 0.85rem 1.75rem; font-weight: 700; cursor: pointer;">
-                    Build Resume ↗
-                  </button>
-                  <button class="btn btn-secondary" id="btn-landing-ats" style="background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 0.85rem 1.75rem; font-weight: 700; cursor: pointer;">
-                    Analyse ATS Score
-                  </button>
-                </div>
-              </div>
+  <a href="#workflow" class="scroll-progress-item" data-section="workflow">
+    <span class="scroll-progress-dot"></span>
+    <span class="scroll-progress-label">Workflow</span>
+  </a>
 
-              <!-- Quick Actions Grid -->
-              <div class="quick-actions-col reveal" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 1.75rem;">
-                <span class="quick-actions-label" style="font-size: 0.78rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-bottom: 1.25rem;">Quick Actions</span>
-                <div class="quick-actions" style="display: flex; flex-direction: column; gap: 1rem;">
-                  
-                  <div class="quick-action-card" data-ws-btn="build-editor" style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 14px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05);">
-                    <div style="display: flex; align-items: center; gap: 1rem;">
-                      <i class="fa-solid fa-pen-to-square" style="color: #3b82f6; font-size: 1.2rem;"></i>
-                      <div>
-                        <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700;">Build Resume</h4>
-                        <p style="margin: 0; font-size: 0.78rem; color: #94a3b8;">Start a new draft with AI.</p>
-                      </div>
-                    </div>
-                    <span style="font-size: 1.1rem; color: #3b82f6;">↗</span>
-                  </div>
+  <a href="#contact" class="scroll-progress-item" data-section="contact">
+    <span class="scroll-progress-dot"></span>
+    <span class="scroll-progress-label">Contact</span>
+  </a>
+</nav>
 
-                  <div class="quick-action-card" data-ws-btn="analysis-ats" style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 14px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05);">
-                    <div style="display: flex; align-items: center; gap: 1rem;">
-                      <i class="fa-solid fa-chart-column" style="color: #10b981; font-size: 1.2rem;"></i>
-                      <div>
-                        <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700;">Analyse Resume</h4>
-                        <p style="margin: 0; font-size: 0.78rem; color: #94a3b8;">Run an ATS report.</p>
-                      </div>
-                    </div>
-                    <span style="font-size: 1.1rem; color: #10b981;">↗</span>
-                  </div>
+<div class="wrap">
 
-                  <div class="quick-action-card" data-ws-btn="assistant" style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 14px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05);">
-                    <div style="display: flex; align-items: center; gap: 1rem;">
-                      <i class="fa-solid fa-robot" style="color: #8b5cf6; font-size: 1.2rem;"></i>
-                      <div>
-                        <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700;">AI Assistant</h4>
-                        <p style="margin: 0; font-size: 0.78rem; color: #94a3b8;">Ask your career coach.</p>
-                      </div>
-                    </div>
-                    <span style="font-size: 1.1rem; color: #8b5cf6;">↗</span>
-                  </div>
+<header class="top-header">
 
-                </div>
-              </div>
-            </div>
-          </section>
+<div class="top-header-row">
 
-          <!-- 02 FEATURES PREVIEW -->
-          <section id="features" style="margin-top: 4rem;">
-            <div class="section-heading-row" style="margin-bottom: 2rem;">
-              <span class="section-num reveal-kicker" style="color: #3b82f6; font-weight: 800;">02</span>
-              <h2 class="section-title reveal-heading" style="font-size: 2rem; font-weight: 800; display: inline-block; margin-left: 0.5rem;">AI FEATURES & CAPABILITIES</h2>
-            </div>
+<div>
 
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.75rem;">
-              <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 1.75rem;">
-                <i class="fa-solid fa-expand" style="font-size: 1.8rem; color: #3b82f6; margin-bottom: 1rem;"></i>
-                <h3 style="font-size: 1.15rem; font-weight: 800; margin-bottom: 0.5rem;">JD Match Scan</h3>
-                <p style="font-size: 0.88rem; color: #94a3b8; line-height: 1.6;">Compare your resume with target job descriptions to identify missing skills and project match score projections.</p>
-              </div>
+<h1 class="wordmark fade-up d1">
+HIREFLOW AI
+</h1>
 
-              <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 1.75rem;">
-                <i class="fa-regular fa-lightbulb" style="font-size: 1.8rem; color: #f59e0b; margin-bottom: 1rem;"></i>
-                <h3 style="font-size: 1.15rem; font-weight: 800; margin-bottom: 0.5rem;">One-Click AI Suggestions</h3>
-                <p style="font-size: 0.88rem; color: #94a3b8; line-height: 1.6;">Get actionable suggestions for skills, projects, certificates, and achievements that apply with a single click.</p>
-              </div>
+<p class="tagline fade-up d2">
+Your AI Career Workspace
+</p>
 
-              <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 1.75rem;">
-                <i class="fa-solid fa-chart-column" style="font-size: 1.8rem; color: #10b981; margin-bottom: 1rem;"></i>
-                <h3 style="font-size: 1.15rem; font-weight: 800; margin-bottom: 0.5rem;">Detailed ATS Analysis</h3>
-                <p style="font-size: 0.88rem; color: #94a3b8; line-height: 1.6;">Section scores for Formatting, Readability, Keywords, Skills, and Achievements with density distribution.</p>
-              </div>
-            </div>
-          </section>
+</div>
 
-        </main>
+<div class="top-meta fade-up d3">
+
+RESUME · ATS · INTERVIEW<br>
+
+BUILT FOR STUDENTS &amp; PROFESSIONALS<br>
+
+HELLO@HIREFLOW.AI
+
+</div>
+
+</div>
+
+</header>
+
+<div class="divider-line div-delay-1"></div>
+
+<nav class="nav-row nav-slide-in">
+
+<a href="#profile">Home</a>
+
+<span class="nav-sep">/</span>
+
+<a href="#projects">Templates</a>
+
+<span class="nav-sep">/</span>
+
+<a href="#profile">AI Assistant</a>
+
+<span class="nav-sep">/</span>
+
+<a href="#" id="landing-signin">
+Sign In
+</a>
+
+</nav>
+
+<div class="divider-line div-delay-2"></div>
+
+<main>
+
+<!-- ================= PROFILE ================= -->
+
+<section id="profile">
+
+<div class="section-heading-row">
+
+<span class="section-num reveal-kicker">
+01
+</span>
+
+<h2 class="section-title reveal-heading">
+PROFILE
+</h2>
+
+<div class="section-title-divider"></div>
+
+</div>
+
+<div class="profile-grid">
+
+<div class="profile-copy reveal">
+
+<p>
+
+HireFlow AI helps you create resumes,
+analyse ATS scores,
+tailor documents for specific jobs
+and prepare for interviews —
+all inside one calm,
+focused workspace.
+
+No scattered tools,
+no guesswork:
+write,
+score,
+refine
+and export
+from the same place.
+
+</p>
+
+<div class="profile-actions">
+
+<a
+href="#"
+id="landing-build-btn"
+class="btn btn-primary">
+
+Build Resume
+
+<span class="btn-arrow">
+↗
+</span>
+
+</a>
+
+<a
+href="#skills"
+class="btn btn-secondary">
+
+Analyse Resume
+
+</a>
+
+</div>
+
+</div>
+
+<div class="quick-actions-col reveal">
+
+<span class="quick-actions-label">
+
+Quick Actions
+
+</span>
+
+<div class="quick-actions">
+
+<a
+href="#"
+class="quick-action-card"
+data-action="builder">
+
+<span class="qa-icon">
+
+<svg viewBox="0 0 24 24"
+fill="none"
+stroke="currentColor"
+stroke-width="2">
+
+<path d="M4 3h11l5 5v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+
+<path d="M9 12h6M9 16h6M9 8h2"/>
+
+</svg>
+
+</span>
+
+<span class="qa-text">
+
+<h4>
+
+Build Resume
+
+</h4>
+
+<p>
+
+Start a new draft with AI.
+
+</p>
+
+</span>
+
+<span class="qa-arrow">
+
+↗
+
+</span>
+
+</a>
+
+<a
+href="#"
+class="quick-action-card"
+data-action="ats">
+
+<span class="qa-icon">
+
+<svg viewBox="0 0 24 24"
+fill="none"
+stroke="currentColor"
+stroke-width="2">
+
+<circle cx="11" cy="11" r="6"/>
+
+<path d="M20 20l-3.5-3.5"/>
+
+</svg>
+
+</span>
+
+<span class="qa-text">
+
+<h4>
+
+Analyse Resume
+
+</h4>
+
+<p>
+
+Run an ATS report.
+
+</p>
+
+</span>
+
+<span class="qa-arrow">
+
+↗
+
+</span>
+
+</a>
+
+<a
+href="#"
+class="quick-action-card"
+data-action="assistant">
+
+<span class="qa-icon">
+
+<svg
+viewBox="0 0 24 24"
+fill="none"
+stroke="currentColor"
+stroke-width="2">
+
+<path d="M21 11.5a8.4 8.4 0 0 1-8.4 8.4 8.5 8.5 0 0 1-3.9-.9L3 20l1-5.6a8.4 8.4 0 1 1 17-2.9z"/>
+
+</svg>
+
+</span>
+
+<span class="qa-text">
+
+<h4>
+
+AI Assistant
+
+</h4>
+
+<p>
+
+Ask your career coach.
+
+</p>
+
+</span>
+
+<span class="qa-arrow">
+
+↗
+
+</span>
+
+</a>
+
+</div>
+
+</div>
+
+</div>
+
+</section>
+
+<!-- ================= SKILLS ================= -->
+
+<section id="skills">
+
+  <div class="section-heading-row">
+
+    <span class="section-num reveal-kicker">
+      02
+    </span>
+
+    <h2 class="section-title reveal-heading">
+      SKILLS
+    </h2>
+
+    <div class="section-title-divider"></div>
+
+  </div>
+
+  <div class="skills-grid">
+
+    <div class="skill-item reveal">
+
+      <div class="skill-head">
+
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 3h11l5 5v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+        </svg>
+
+        <h4>Resume Builder</h4>
+
       </div>
-    `;
-  },
 
-  bindEvents() {
-    document.getElementById('landing-btn-workspace')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      Store.setWorkspaceView('dashboard');
-    });
+      <p>Create ATS-friendly resumes in minutes.</p>
 
-    document.getElementById('btn-landing-build')?.addEventListener('click', () => {
-      Store.setWorkspaceView('build-editor');
-    });
+    </div>
 
-    document.getElementById('btn-landing-ats')?.addEventListener('click', () => {
-      Store.setWorkspaceView('analysis-ats');
-    });
+    <div class="skill-item reveal">
 
-    document.querySelectorAll('[data-ws-btn]').forEach(el => {
-      el.addEventListener('click', (e) => {
+      <div class="skill-head">
+
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="6"/>
+          <path d="M20 20l-3.5-3.5"/>
+        </svg>
+
+        <h4>ATS Analysis</h4>
+
+      </div>
+
+      <p>Improve keyword matching and parsing.</p>
+
+    </div>
+
+    <div class="skill-item reveal">
+
+      <div class="skill-head">
+
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2l2.4 7.2H22l-6 4.4 2.3 7.2-6.3-4.5-6.3 4.5 2.3-7.2-6-4.4h7.6z"/>
+        </svg>
+
+        <h4>AI Assistant</h4>
+
+      </div>
+
+      <p>Rewrite and optimise every section.</p>
+
+    </div>
+
+    <div class="skill-item reveal">
+
+      <div class="skill-head">
+
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="8"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+
+        <h4>JD Match</h4>
+
+      </div>
+
+      <p>Tailor resumes for specific jobs.</p>
+
+    </div>
+
+    <div class="skill-item reveal">
+
+      <div class="skill-head">
+
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 11.5a8.4 8.4 0 0 1-8.4 8.4 8.5 8.5 0 0 1-3.9-.9L3 20l1-5.6a8.4 8.4 0 1 1 17-2.9z"/>
+        </svg>
+
+        <h4>Interview Coach</h4>
+
+      </div>
+
+      <p>Practice interviews with AI feedback.</p>
+
+    </div>
+
+    <div class="skill-item reveal">
+
+      <div class="skill-head">
+
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="18" rx="1"/>
+          <rect x="14" y="3" width="7" height="8" rx="1"/>
+        </svg>
+
+        <h4>Resume Templates</h4>
+
+      </div>
+
+      <p>Choose beautiful ATS-safe designs.</p>
+
+    </div>
+
+  </div>
+
+</section>
+
+<!-- ================= EXPERIENCE ================= -->
+
+<section id="experience">
+
+  <div class="section-heading-row">
+
+    <span class="section-num reveal-kicker">
+      03
+    </span>
+
+    <h2 class="section-title reveal-heading">
+      EXPERIENCE
+    </h2>
+
+    <div class="section-title-divider"></div>
+
+  </div>
+
+  <div class="experience-list">
+
+    <div class="experience-row reveal">
+
+      <div>
+
+        <div class="experience-title">
+          AI Resume Builder
+        </div>
+
+        <div class="experience-date">
+          2026 — Present
+        </div>
+
+      </div>
+
+      <div>
+
+        <p class="experience-desc">
+          Create professional resumes using AI with real-time editing,
+          section rewrites and instant template switching.
+        </p>
+
+        <div class="tag-row">
+
+          <span class="tag-pill">Drafting</span>
+          <span class="tag-pill">Rewrite</span>
+          <span class="tag-pill">Templates</span>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="experience-row reveal">
+
+      <div>
+
+        <div class="experience-title">
+          ATS Analysis
+        </div>
+
+        <div class="experience-date">
+          2026 — Present
+        </div>
+
+      </div>
+
+      <div>
+
+        <p class="experience-desc">
+          Analyse formatting, keywords and readability with instant scoring
+          and line-level fixes before you apply.
+        </p>
+
+        <div class="tag-row">
+
+          <span class="tag-pill">Scoring</span>
+          <span class="tag-pill">Keywords</span>
+          <span class="tag-pill">Parsing</span>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="experience-row reveal">
+
+      <div>
+
+        <div class="experience-title">
+          AI Career Coach
+        </div>
+
+        <div class="experience-date">
+          2026 — Present
+        </div>
+
+      </div>
+
+      <div>
+
+        <p class="experience-desc">
+          Practice interviews and build confidence with role-specific
+          questions and structured AI feedback.
+        </p>
+
+        <div class="tag-row">
+
+          <span class="tag-pill">Interviews</span>
+          <span class="tag-pill">Feedback</span>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
+
+<!-- ================= PROJECTS ================= -->
+
+<section id="projects">
+
+  <div class="section-heading-row">
+
+    <span class="section-num reveal-kicker">
+      04
+    </span>
+
+    <h2 class="section-title reveal-heading">
+      PROJECTS
+    </h2>
+
+    <div class="section-title-divider"></div>
+
+  </div>
+
+  <div class="projects-grid">
+
+    <div class="project-card reveal">
+
+      <div class="pc-title-bar"></div>
+      <div class="pc-accent-bar"></div>
+      <div class="pc-divider"></div>
+
+      <div class="pc-split">
+
+        <div>
+
+          <div class="pc-line w1"></div>
+          <div class="pc-line w2"></div>
+          <div class="pc-line w1"></div>
+
+        </div>
+
+        <div>
+
+          <div class="pc-line w2"></div>
+          <div class="pc-line w1"></div>
+          <div class="pc-line w2"></div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="project-card reveal">
+
+      <div class="pc-title-bar"></div>
+      <div class="pc-accent-bar"></div>
+      <div class="pc-divider"></div>
+
+      <div class="pc-lines">
+
+        <div class="pc-line w3"></div>
+        <div class="pc-line w2"></div>
+        <div class="pc-line accent w1"></div>
+        <div class="pc-line w2"></div>
+        <div class="pc-line accent w4"></div>
+
+      </div>
+
+    </div>
+
+    <div class="project-card reveal">
+
+      <div class="pc-title-bar"></div>
+      <div class="pc-accent-bar"></div>
+      <div class="pc-divider"></div>
+
+      <div class="pc-lines">
+
+        <div class="pc-line w4"></div>
+        <div class="pc-line w3"></div>
+        <div class="pc-line accent w2"></div>
+        <div class="pc-line w3"></div>
+
+      </div>
+
+    </div>
+
+    <div class="project-card reveal">
+
+      <div class="pc-title-bar"></div>
+      <div class="pc-accent-bar"></div>
+      <div class="pc-divider"></div>
+
+      <div class="pc-lines">
+
+        <div class="pc-line w1"></div>
+        <div class="pc-line w3"></div>
+        <div class="pc-line accent w2"></div>
+        <div class="pc-line w1"></div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
+<!-- ================= WORKFLOW ================= -->
+
+<section id="workflow">
+
+  <div class="dual-col">
+
+    <!-- Workflow -->
+
+    <div>
+
+      <div class="section-heading-row">
+
+        <span class="section-num reveal-kicker">
+          05
+        </span>
+
+        <h2 class="section-title reveal-heading">
+          WORKFLOW
+        </h2>
+
+        <div class="section-title-divider"></div>
+
+      </div>
+
+      <div class="workflow-list">
+
+        <div class="wf-row reveal">
+
+          <span class="wf-num">
+            01
+          </span>
+
+          <h4>
+            Create Resume
+          </h4>
+
+          <p>
+            Start fresh or import an existing document.
+          </p>
+
+        </div>
+
+        <div class="wf-row reveal">
+
+          <span class="wf-num">
+            02
+          </span>
+
+          <h4>
+            Analyse
+          </h4>
+
+          <p>
+            Run an ATS report and review section scores.
+          </p>
+
+        </div>
+
+        <div class="wf-row reveal">
+
+          <span class="wf-num">
+            03
+          </span>
+
+          <h4>
+            Improve
+          </h4>
+
+          <p>
+            Apply AI suggestions and tailor your resume to the role.
+          </p>
+
+        </div>
+
+        <div class="wf-row reveal">
+
+          <span class="wf-num">
+            04
+          </span>
+
+          <h4>
+            Apply
+          </h4>
+
+          <p>
+            Export a clean PDF and send it to recruiters.
+          </p>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Certifications -->
+
+    <div>
+
+      <div class="section-heading-row">
+
+        <span class="section-num reveal-kicker">
+          06
+        </span>
+
+        <h2 class="section-title reveal-heading">
+          CERTIFICATIONS
+        </h2>
+
+        <div class="section-title-divider"></div>
+
+      </div>
+
+      <div class="cert-list">
+
+        <div class="cert-card reveal">
+
+          <span class="cert-left">
+
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+              <path d="M12 2l8 4v6c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6l8-4z"/>
+
+              <path d="M9 12l2 2 4-4"/>
+
+            </svg>
+
+            <span>
+              ATS Friendly
+            </span>
+
+          </span>
+
+          <span class="cert-caption">
+            Parsing verified
+          </span>
+
+        </div>
+
+        <div class="cert-card reveal">
+
+          <span class="cert-left">
+
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
+
+              <path d="M9 9h6v6H9z"/>
+
+            </svg>
+
+            <span>
+              AI Powered
+            </span>
+
+          </span>
+
+          <span class="cert-caption">
+            DeepSeek Models
+          </span>
+
+        </div>
+
+        <div class="cert-card reveal">
+
+          <span class="cert-left">
+
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+              <rect x="5" y="11" width="14" height="9" rx="2"/>
+
+              <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+
+            </svg>
+
+            <span>
+              Privacy First
+            </span>
+
+          </span>
+
+          <span class="cert-caption">
+            Your data stays yours
+          </span>
+
+        </div>
+
+        <div class="cert-card reveal">
+
+          <span class="cert-left">
+
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+              <circle cx="6" cy="6" r="2"/>
+
+              <circle cx="6" cy="18" r="2"/>
+
+              <circle cx="18" cy="12" r="2"/>
+
+              <path d="M6 8v8"/>
+
+              <path d="M8 6h4a4 4 0 0 1 4 4"/>
+
+            </svg>
+
+            <span>
+              Open Source
+            </span>
+
+          </span>
+
+          <span class="cert-caption">
+            Public Codebase
+          </span>
+
+        </div>
+
+        <div class="cert-card reveal">
+
+          <span class="cert-left">
+
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+              <path d="M12 3v12"/>
+
+              <path d="M12 15l-4-4"/>
+
+              <path d="M12 15l4-4"/>
+
+              <path d="M4 19h16"/>
+
+            </svg>
+
+            <span>
+              Fast Export
+            </span>
+
+          </span>
+
+          <span class="cert-caption">
+            PDF in seconds
+          </span>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
+
+<!-- ================= FINAL CTA ================= -->
+
+<section
+id="contact"
+class="final-cta reveal">
+
+  <div>
+
+    <h2>
+
+      Ready to build your next opportunity?
+
+    </h2>
+
+    <p>
+
+      Start free — no card, no setup.
+
+    </p>
+
+  </div>
+
+  <a
+    href="#"
+    id="landing-start-free"
+    class="btn btn-primary">
+
+    Start Free
+
+    <span class="btn-arrow">
+      ↗
+    </span>
+
+  </a>
+
+</section>
+
+</main>
+
+<footer>
+
+  <div class="footer-inner reveal">
+
+    <div class="footer-links">
+
+      <a href="#">
+        GitHub
+      </a>
+
+      <a href="#">
+        Email
+      </a>
+
+      <a href="#">
+        About
+      </a>
+
+      <a href="#">
+        Privacy
+      </a>
+
+    </div>
+
+    <span class="footer-copy">
+
+      © 2026 HIREFLOW AI
+
+    </span>
+
+  </div>
+
+</footer>
+
+</div>
+
+`;
+
+},
+bindEvents() {
+
+  // ===========================
+  // SPA Navigation
+  // ===========================
+
+  document.getElementById("landing-build-btn")
+  ?.addEventListener("click", (e) => {
+
+    e.preventDefault();
+
+    Store.setView("builder");
+
+  });
+
+  document.getElementById("landing-start-free")
+  ?.addEventListener("click", (e) => {
+
+    e.preventDefault();
+
+    Store.setView("signup");
+
+  });
+
+  document.getElementById("landing-signin")
+  ?.addEventListener("click", (e) => {
+
+    e.preventDefault();
+
+    Store.setView("login");
+
+  });
+
+  // Quick Action Cards
+
+  document
+    .querySelectorAll(".quick-action-card")
+    .forEach(card => {
+
+      card.addEventListener("click", (e) => {
+
         e.preventDefault();
-        const target = el.getAttribute('data-ws-btn');
-        Store.setWorkspaceView(target);
+
+        const action = card.dataset.action;
+
+        switch (action) {
+
+          case "builder":
+
+            Store.setView("builder");
+
+            break;
+
+          case "ats":
+
+            Store.setView("analyzer");
+
+            break;
+
+          case "assistant":
+
+            Store.setView("assistant");
+
+            break;
+
+        }
+
       });
+
     });
+
+  // ===========================
+  // Scroll Reveal
+  // ===========================
+
+  const prefersReducedMotion =
+    window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+
+  const revealEls =
+    document.querySelectorAll(
+      ".reveal, .reveal-kicker, .reveal-heading, .section-title-divider"
+    );
+
+  if (
+    "IntersectionObserver" in window &&
+    !prefersReducedMotion
+  ) {
+
+    const revealObserver =
+      new IntersectionObserver(
+
+        entries => {
+
+          entries.forEach(entry => {
+
+            if (entry.isIntersecting) {
+
+              entry.target.classList.add("in-view");
+
+              revealObserver.unobserve(entry.target);
+
+            }
+
+          });
+
+        },
+
+        {
+          threshold: 0.12
+        }
+
+      );
+
+    revealEls.forEach(el => {
+
+      revealObserver.observe(el);
+
+    });
+
+  } else {
+
+    revealEls.forEach(el => {
+
+      el.classList.add("in-view");
+
+    });
+
   }
+
+  // ===========================
+  // Scroll Progress
+  // ===========================
+
+  const progressSections = [
+
+    "profile",
+
+    "skills",
+
+    "experience",
+
+    "projects",
+
+    "workflow",
+
+    "contact"
+
+  ];
+
+  const progressItems =
+    document.querySelectorAll(
+      ".scroll-progress-item"
+    );
+
+  function updateScrollProgress() {
+
+    const scrollPos =
+      window.scrollY +
+      window.innerHeight / 2;
+
+    let currentIndex = 0;
+
+    progressSections.forEach((id, i) => {
+
+      const el =
+        document.getElementById(id);
+
+      if (
+        el &&
+        el.offsetTop <= scrollPos
+      ) {
+
+        currentIndex = i;
+
+      }
+
+    });
+
+    progressItems.forEach((item, i) => {
+
+      item.classList.toggle(
+        "active",
+        i === currentIndex
+      );
+
+      item.classList.toggle(
+        "passed",
+        i < currentIndex
+      );
+
+    });
+
+  }
+
+  window.addEventListener(
+    "scroll",
+    updateScrollProgress,
+    { passive: true }
+  );
+
+  window.addEventListener(
+    "load",
+    updateScrollProgress
+  );
+
+  updateScrollProgress();
+
+}
+
 };
+
+window.LandingView = LandingView;
