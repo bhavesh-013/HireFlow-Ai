@@ -1,0 +1,350 @@
+{
+	"info": {
+		"_postman_id": "c8a1e500-1122-3344-5566-778899aabbcc",
+		"name": "HireFlow AI - Complete Production API Collection (v4.0)",
+		"description": "Complete Postman collection for HireFlow AI backend containing all request definitions for Authentication, Resume CRUD & Versioning, ATS Analysis, JD Match, AI Suggestions, AI Career Coach, Uploads, Templates, and Dashboard Analytics.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Health & Documentation",
+			"item": [
+				{
+					"name": "Get API Health Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/health",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "health"]
+						}
+					}
+				},
+				{
+					"name": "Get OpenAPI Specs (Swagger)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/swagger.json",
+							"host": ["{{baseUrl}}"],
+							"path": ["swagger.json"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Authentication & User Profile",
+			"item": [
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Alex Mercer\",\n  \"email\": \"alex.mercer@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "register"]
+						}
+					}
+				},
+				{
+					"name": "Login User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"alex.mercer@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Get Current User Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "me"]
+						}
+					}
+				},
+				{
+					"name": "Update User Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Alex Mercer\",\n  \"headline\": \"Senior Full Stack Engineer & Cloud Architect\",\n  \"bio\": \"Passionate about building scalable cloud-native architectures.\",\n  \"skills\": [\"React\", \"Node.js\", \"TypeScript\", \"AWS\", \"Docker\"]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/profile",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "auth", "profile"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Resume Management",
+			"item": [
+				{
+					"name": "Create Resume",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Principal Software Architect Resume\",\n  \"template\": \"modern\",\n  \"resumeData\": {\n    \"personalInfo\": {\n      \"firstName\": \"Alex\",\n      \"lastName\": \"Mercer\",\n      \"email\": \"alex@hireflow.ai\",\n      \"jobTitle\": \"Principal Software Architect\"\n    },\n    \"skills\": [\n      { \"id\": \"sk_1\", \"category\": \"Engineering\", \"name\": \"System Architecture\", \"level\": \"Expert\" }\n    ]\n  }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/resumes",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "resumes"]
+						}
+					}
+				},
+				{
+					"name": "Get All Resumes",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/resumes?page=1&limit=10&sortBy=lastEdited&sortOrder=desc",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "resumes"],
+							"query": [
+								{ "key": "page", "value": "1" },
+								{ "key": "limit", "value": "10" },
+								{ "key": "sortBy", "value": "lastEdited" },
+								{ "key": "sortOrder", "value": "desc" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Resume By ID",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/resumes/{{resumeId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "resumes", "{{resumeId}}"]
+						}
+					}
+				},
+				{
+					"name": "Update Resume",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "PUT",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated Master Resume\",\n  \"template\": \"minimal\",\n  \"isFavorite\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/resumes/{{resumeId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "resumes", "{{resumeId}}"]
+						}
+					}
+				},
+				{
+					"name": "Duplicate Resume",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "POST",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/resumes/{{resumeId}}/duplicate",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "resumes", "{{resumeId}}", "duplicate"]
+						}
+					}
+				},
+				{
+					"name": "Delete Resume",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/resumes/{{resumeId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "resumes", "{{resumeId}}"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "4. AI & ATS Analysis Suite",
+			"item": [
+				{
+					"name": "ATS Score & Keyword Analysis",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"resumeId\": \"{{resumeId}}\",\n  \"targetRole\": \"Senior Full Stack Engineer\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/ai/ats-analyze",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "ai", "ats-analyze"]
+						}
+					}
+				},
+				{
+					"name": "Job Description Match & Gap Analysis",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"resumeId\": \"{{resumeId}}\",\n  \"jobDescription\": \"Looking for a Senior Full Stack Engineer proficient in React, Node.js, TypeScript, Express, MongoDB, Docker, and AWS microservices with 5+ years experience.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/ai/jd-match",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "ai", "jd-match"]
+						}
+					}
+				},
+				{
+					"name": "AI Section & Bullet Suggestions",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"resumeId\": \"{{resumeId}}\",\n  \"section\": \"experience\",\n  \"promptDetails\": \"Highlight accomplishments in high-scale traffic and team leadership\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/ai/suggest",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "ai", "suggest"]
+						}
+					}
+				},
+				{
+					"name": "AI Career Coach Assistant Chat",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"What are the top 3 ways I can prepare for a System Design interview?\",\n  \"resumeId\": \"{{resumeId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/ai/career-coach",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "ai", "career-coach"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "5. Dashboard & Analytics",
+			"item": [
+				{
+					"name": "Get Dashboard Statistics",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
+						},
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/dashboard/stats",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "dashboard", "stats"]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "resumeId",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

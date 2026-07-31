@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  hireflow-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hireflow_ai_backend
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017/hireflow_db}
+      - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_hireflow_ai_production}
+      - JWT_EXPIRES_IN=7d
+      - CLIENT_URL=${CLIENT_URL:-http://localhost:3000}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+    depends_on:
+      - mongo
+    networks:
+      - hireflow-network
+
+  mongo:
+    image: mongo:7.0
+    container_name: hireflow_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - hireflow-network
+
+volumes:
+  mongo_data:
+
+networks:
+  hireflow-network:
+    driver: bridge

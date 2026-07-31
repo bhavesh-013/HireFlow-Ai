@@ -1,0 +1,6 @@
+{
+  "name": "HireFlow AI",
+  "description": "Your AI Career Workspace - Create resumes, analyze ATS scores, and prepare for interviews.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #F7F9FA;
+    color: #0B192C;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Custom hairline borders and dividers */
+.border-subtle {
+  border-color: rgba(11, 25, 44, 0.1);
+}
+
+.divide-subtle > * + * {
+  border-color: rgba(11, 25, 44, 0.1);
+}
+

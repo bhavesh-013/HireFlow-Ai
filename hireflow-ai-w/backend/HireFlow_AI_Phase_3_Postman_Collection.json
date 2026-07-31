@@ -1,0 +1,171 @@
+{
+	"info": {
+		"_postman_id": "hireflow-ai-phase3-postman-collection",
+		"name": "HireFlow AI - Phase 3 (Resume Processing & AI Integration)",
+		"description": "Production-ready Postman collection for HireFlow AI Phase 3: Resume Upload, PDF/DOCX Text Extraction, Gemini AI Resume Parsing, LinkedIn Import, GitHub Integration, Validation Checks, and Upload History.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5000/api/v1",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "uploadId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Resume Upload & Parsing",
+			"item": [
+				{
+					"name": "Upload & Parse Resume (PDF/DOCX)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/upload/resume",
+							"host": ["{{baseUrl}}"],
+							"path": ["upload", "resume"]
+						},
+						"description": "Uploads a PDF or DOCX resume (max 10MB), stores in Cloudinary, extracts raw text, parses into structured JSON using Gemini AI, validates completeness, and creates a Resume document."
+					}
+				},
+				{
+					"name": "Get Upload & Import History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/upload/history?page=1&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["upload", "history"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Returns paginated file upload records and import history logs for the authenticated user."
+					}
+				},
+				{
+					"name": "Delete Upload Record",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/upload/{{uploadId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["upload", "{{uploadId}}"]
+						},
+						"description": "Deletes uploaded file metadata from MongoDB and destroys asset in Cloudinary."
+					}
+				}
+			]
+		},
+		{
+			"name": "External Profile Imports",
+			"item": [
+				{
+					"name": "Import LinkedIn Profile (Exported PDF)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": ""
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/import/linkedin",
+							"host": ["{{baseUrl}}"],
+							"path": ["import", "linkedin"]
+						},
+						"description": "Uploads an exported LinkedIn profile PDF, parses experience, education, skills, and creates a Resume document."
+					}
+				},
+				{
+					"name": "Import GitHub Profile & Repositories",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"octocat\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/import/github",
+							"host": ["{{baseUrl}}"],
+							"path": ["import", "github"]
+						},
+						"description": "Fetches GitHub user profile, top starred public repositories, and languages, converting them into Resume Projects and Skills."
+					}
+				}
+			]
+		}
+	]
+}

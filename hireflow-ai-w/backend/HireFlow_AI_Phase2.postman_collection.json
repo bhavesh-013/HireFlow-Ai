@@ -1,0 +1,491 @@
+{
+  "info": {
+    "_postman_id": "b9f4e2c3-5d01-5f23-9b01-hireflowai02",
+    "name": "HireFlow AI - Phase 2 Resume Management API",
+    "description": "Complete Postman Collection for HireFlow AI Phase 2 Backend - Resume Management, Versions, Editor, Dashboard & Templates.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resumeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "versionId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Auth - Register User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.token) {",
+                  "    pm.collectionVariables.set('authToken', jsonData.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sarah Jenkins\",\n  \"email\": \"sarah.jenkins@example.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Auth - Login User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.token) {",
+                  "    pm.collectionVariables.set('authToken', jsonData.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sarah.jenkins@example.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Resume CRUD Operations",
+      "item": [
+        {
+          "name": "Create Resume",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data._id) {",
+                  "    pm.collectionVariables.set('resumeId', jsonData.data._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Senior Full Stack Developer Resume\",\n  \"template\": \"modern\",\n  \"theme\": {\n    \"primaryColor\": \"#0B192C\",\n    \"secondaryColor\": \"#1E3E62\",\n    \"accentColor\": \"#3B82F6\",\n    \"font\": \"Inter\",\n    \"fontSize\": \"medium\",\n    \"layoutSpacing\": \"normal\"\n  },\n  \"resumeData\": {\n    \"personalInfo\": {\n      \"firstName\": \"Sarah\",\n      \"lastName\": \"Jenkins\",\n      \"email\": \"sarah.jenkins@example.com\",\n      \"phone\": \"+1 (555) 019-2834\",\n      \"location\": \"San Francisco, CA\",\n      \"jobTitle\": \"Senior Full Stack Engineer\",\n      \"website\": \"https://sarahjenkins.dev\",\n      \"linkedin\": \"https://linkedin.in/sarahjenkins\",\n      \"github\": \"https://github.com/sarahjenkins\"\n    },\n    \"summary\": \"Driven Senior Engineer with 7+ years of experience scaling cloud-native Node.js microservices.\",\n    \"skills\": [\n      { \"id\": \"s1\", \"name\": \"React.js\", \"category\": \"Frontend\", \"level\": \"Expert\" },\n      { \"id\": \"s2\", \"name\": \"Node.js\", \"category\": \"Backend\", \"level\": \"Expert\" },\n      { \"id\": \"s3\", \"name\": \"MongoDB\", \"category\": \"Database\", \"level\": \"Advanced\" }\n    ]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/resumes",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes"]
+            }
+          }
+        },
+        {
+          "name": "Get My Resumes (Filtered & Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes?page=1&limit=10&search=&favorite=&archived=false&sortBy=lastEdited&sortOrder=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "search", "value": "" },
+                { "key": "favorite", "value": "" },
+                { "key": "archived", "value": "false" },
+                { "key": "sortBy", "value": "lastEdited" },
+                { "key": "sortOrder", "value": "desc" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Resume By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Resume",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Lead Full Stack Engineer - 2026 Edition\",\n  \"visibility\": \"private\",\n  \"status\": \"published\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}"]
+            }
+          }
+        },
+        {
+          "name": "Duplicate Resume",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/duplicate",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "duplicate"]
+            }
+          }
+        },
+        {
+          "name": "Toggle Favorite Resume",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/favorite",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "favorite"]
+            }
+          }
+        },
+        {
+          "name": "Archive Resume",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/archive",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "archive"]
+            }
+          }
+        },
+        {
+          "name": "Restore Archived Resume",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/restore",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "restore"]
+            }
+          }
+        },
+        {
+          "name": "Autosave Resume",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Senior Lead Engineer\",\n  \"resumeData\": {\n    \"summary\": \"Updated executive summary highlighting team leadership.\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/autosave",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "autosave"]
+            }
+          }
+        },
+        {
+          "name": "Delete Resume",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Granular Section Updates",
+      "item": [
+        {
+          "name": "Update Personal Info Section",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Sarah\",\n  \"lastName\": \"Jenkins\",\n  \"email\": \"sarah.jenkins@hireflow.ai\",\n  \"phone\": \"+1 (415) 890-1234\",\n  \"location\": \"San Francisco, CA\",\n  \"jobTitle\": \"Lead Software Architect\",\n  \"website\": \"https://sarahjenkins.dev\",\n  \"linkedin\": \"https://linkedin.com/in/sarahjenkins\",\n  \"github\": \"https://github.com/sarahjenkins\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/section/personalInfo",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "section", "personalInfo"]
+            }
+          }
+        },
+        {
+          "name": "Update Experience Section",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"id\": \"exp_1\",\n    \"company\": \"TechCorp Inc.\",\n    \"position\": \"Staff Engineer\",\n    \"location\": \"San Francisco, CA\",\n    \"startDate\": \"2023-01\",\n    \"endDate\": \"Present\",\n    \"current\": true,\n    \"description\": \"Leading core distributed backend teams.\",\n    \"bullets\": [\n      \"Architected Node.js microservices handling 10M+ daily events.\",\n      \"Reduced database latency by 42% through query optimization.\"\n    ]\n  }\n]"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/section/experience",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "section", "experience"]
+            }
+          }
+        },
+        {
+          "name": "Update Skills Section",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  { \"id\": \"sk_1\", \"category\": \"Languages\", \"name\": \"TypeScript\", \"level\": \"Expert\" },\n  { \"id\": \"sk_2\", \"category\": \"Backend\", \"name\": \"Node.js / Express\", \"level\": \"Master\" },\n  { \"id\": \"sk_3\", \"category\": \"Cloud\", \"name\": \"AWS / GCP\", \"level\": \"Advanced\" }\n]"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/section/skills",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "section", "skills"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Version History",
+      "item": [
+        {
+          "name": "Create Manual Snapshot Version",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data._id) {",
+                  "    pm.collectionVariables.set('versionId', jsonData.data._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pre-Interview Revision\",\n  \"notes\": \"Updated work history bullet points before Google application submission.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/version",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "version"]
+            }
+          }
+        },
+        {
+          "name": "Get Version History",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "history"]
+            }
+          }
+        },
+        {
+          "name": "Restore Version Snapshot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/version/{{versionId}}/restore",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "version", "{{versionId}}", "restore"]
+            }
+          }
+        },
+        {
+          "name": "Delete Version Snapshot",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/version/{{versionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "version", "{{versionId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Dashboard & Templates",
+      "item": [
+        {
+          "name": "Get Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "stats"]
+            }
+          }
+        },
+        {
+          "name": "Get Recent Resumes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/recent?limit=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["dashboard", "recent"],
+              "query": [{ "key": "limit", "value": "5" }]
+            }
+          }
+        },
+        {
+          "name": "List Available Templates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/templates",
+              "host": ["{{baseUrl}}"],
+              "path": ["templates"]
+            }
+          }
+        },
+        {
+          "name": "Switch Resume Template",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"template\": \"executive\",\n  \"theme\": {\n    \"primaryColor\": \"#0F172A\",\n    \"font\": \"Playfair Display\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/resumes/{{resumeId}}/template",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumes", "{{resumeId}}", "template"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
