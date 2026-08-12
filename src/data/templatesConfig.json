@@ -1,0 +1,117 @@
+[
+  {
+    "id": "ats-classic",
+    "name": "ATS Classic",
+    "category": "ATS",
+    "tags": ["ATS", "Fresher", "Experienced"],
+    "resumeType": ["fresher", "experienced"],
+    "description": "Single-column layout with clear section hierarchy and strong readability. Minimal decoration, standard headings, and no graphics — built to parse cleanly in any ATS.",
+    "infoTags": ["ATS Friendly", "Single Column", "1 Page"],
+    "layout": {
+      "fontFamily": "Arial, Helvetica, sans-serif",
+      "primaryColor": "#111827",
+      "accentColor": "#111827",
+      "textColor": "#1F2937",
+      "headerAlignment": "left",
+      "headerStyle": "classic",
+      "sectionBorder": "bottom-line",
+      "sectionTitleTransform": "uppercase",
+      "sectionTitleFont": "bold",
+      "singleColumn": true,
+      "noTables": true,
+      "noGraphics": true
+    }
+  },
+  {
+    "id": "modern-professional",
+    "name": "Modern Professional",
+    "category": "Professional",
+    "tags": ["Professional", "Fresher", "Experienced"],
+    "resumeType": ["fresher", "experienced"],
+    "description": "Clean modern typography with a subtle accent color, confident section hierarchy, and generous spacing for a polished, professional feel.",
+    "infoTags": ["ATS Friendly", "Single Column", "1 Page"],
+    "layout": {
+      "fontFamily": "Inter, sans-serif",
+      "primaryColor": "#0B192C",
+      "accentColor": "#2563EB",
+      "textColor": "#334155",
+      "headerAlignment": "left",
+      "headerStyle": "modern",
+      "sectionBorder": "accent-left",
+      "sectionTitleTransform": "uppercase",
+      "sectionTitleFont": "bold",
+      "singleColumn": true,
+      "noTables": true,
+      "noGraphics": true
+    }
+  },
+  {
+    "id": "technical",
+    "name": "Technical",
+    "category": "Tech",
+    "tags": ["Tech", "Fresher", "Experienced"],
+    "resumeType": ["fresher", "experienced"],
+    "description": "Developer-friendly layout with a strong skills section and projects emphasized alongside technical experience. Built for engineering roles.",
+    "infoTags": ["ATS Friendly", "Single Column", "1 Page"],
+    "layout": {
+      "fontFamily": "Inter, sans-serif",
+      "primaryColor": "#0F172A",
+      "accentColor": "#0EA5E9",
+      "textColor": "#1E293B",
+      "headerAlignment": "left",
+      "headerStyle": "modern",
+      "sectionBorder": "bottom-line",
+      "sectionTitleTransform": "uppercase",
+      "sectionTitleFont": "bold",
+      "singleColumn": true,
+      "noTables": true,
+      "noGraphics": true
+    }
+  },
+  {
+    "id": "minimal",
+    "name": "Minimal",
+    "category": "Minimal",
+    "tags": ["Minimal", "Fresher", "Experienced"],
+    "resumeType": ["fresher", "experienced"],
+    "description": "Very clean, distraction-free layout with lots of whitespace, simple typography, and minimal borders for excellent readability.",
+    "infoTags": ["ATS Friendly", "Single Column", "1 Page"],
+    "layout": {
+      "fontFamily": "Roboto, sans-serif",
+      "primaryColor": "#111827",
+      "accentColor": "#6B7280",
+      "textColor": "#374151",
+      "headerAlignment": "left",
+      "headerStyle": "minimal",
+      "sectionBorder": "none",
+      "sectionTitleTransform": "uppercase",
+      "sectionTitleFont": "medium",
+      "singleColumn": true,
+      "noTables": true,
+      "noGraphics": true
+    }
+  },
+  {
+    "id": "executive",
+    "name": "Executive",
+    "category": "Professional",
+    "tags": ["Professional", "Experienced"],
+    "resumeType": ["experienced"],
+    "description": "Experience-focused layout with a strong professional summary, centered header, and a more mature visual hierarchy for senior candidates.",
+    "infoTags": ["ATS Friendly", "Single Column", "1 Page"],
+    "layout": {
+      "fontFamily": "Georgia, 'Times New Roman', serif",
+      "primaryColor": "#0F172A",
+      "accentColor": "#1E293B",
+      "textColor": "#1E293B",
+      "headerAlignment": "center",
+      "headerStyle": "bold",
+      "sectionBorder": "double-line",
+      "sectionTitleTransform": "uppercase",
+      "sectionTitleFont": "extrabold",
+      "singleColumn": true,
+      "noTables": true,
+      "noGraphics": true
+    }
+  }
+]

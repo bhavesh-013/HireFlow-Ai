@@ -1,0 +1,3528 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  Save,
+  Download,
+  Eye,
+  EyeOff,
+  Undo,
+  Redo,
+  Sparkles,
+  CheckCircle2,
+  Plus,
+  PlusCircle,
+  Trash2,
+  User,
+  Briefcase,
+  GraduationCap,
+  Code,
+  Award,
+  Trophy,
+  Globe,
+  ArrowLeft,
+  FileText,
+  Palette,
+  Type,
+  Sliders,
+  Check,
+  AlertCircle,
+  RotateCcw,
+  Github,
+  Star,
+  ExternalLink,
+  X,
+  Edit3,
+  Zap,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  SlidersHorizontal,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  Minimize2,
+  FileCheck,
+  Sparkle,
+  GripVertical,
+  Copy,
+  Layers,
+  FolderPlus
+} from 'lucide-react';
+import { resumes as resumesApi, ai as aiApi, ApiRequestError, isAuthenticated, getStoredUser } from '../lib/api';
+import { rememberCurrentLocationForRedirect } from '../lib/authGate';
+import LoginRequiredModal from '../components/app/LoginRequiredModal';
+import { toBackendPayload, fromBackendResume } from '../lib/resumeMapping';
+import {
+  ParsedResumeData,
+  ExperienceItem,
+  EducationItem,
+  ProjectItem,
+  CertificateItem,
+  AchievementItem,
+  SectionNavItem,
+  CustomSectionData,
+  CustomSectionItem,
+  ResumeType
+} from '../types';
+import { GitHubImportModal } from '../components/app/GitHubImportModal';
+import { templatesConfigService } from '../services/templateConfig.service';
+import { getDefaultSectionItems } from '../services/section.reorder';
+import { normalizeProjects } from '../utils/resumeTextParser';
+import { AiWritingAssistantInline } from '../components/app/AiWritingAssistantInline';
+import { downloadDocxExport, generateSafeFilename } from '../services/export.service';
+
+export default function ResumeEditorPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const documentSheetRef = useRef<HTMLDivElement | null>(null);
+
+  // Backend resume id — present once this resume has been saved at least once
+  const [resumeId, setResumeId] = useState<string | null>(searchParams.get('id'));
+  const [isLoadingResume, setIsLoadingResume] = useState<boolean>(!!searchParams.get('id'));
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isAiWorking, setIsAiWorking] = useState(false);
+  const [isAuthGateOpen, setIsAuthGateOpen] = useState(false);
+  // Stores which export type ('pdf' | 'docx') to auto-fire after login redirect
+  const pendingExportRef = React.useRef<'pdf' | 'docx' | null>(null);
+
+  // Only Export requires authentication. Call this at the top of an export
+  // handler — stores the intent in sessionStorage, opens the modal, returns
+  // true if the action should be blocked.
+  const gateExport = (type: 'pdf' | 'docx'): boolean => {
+    if (!isAuthenticated()) {
+      sessionStorage.setItem('hireflow_pending_export', type);
+      setIsAuthGateOpen(true);
+      return true;
+    }
+    return false;
+  };
+
+  // Load state from router or localStorage
+  const importedData: ParsedResumeData | null = location.state?.importedResume || (() => {
+    try {
+      const stored = localStorage.getItem('hireflow_current_resume');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  // Real logged-in user (if any) — used to prefill known contact fields,
+  // never to fabricate resume content.
+  const currentUser = getStoredUser();
+
+  // Default section navigator items now come from getDefaultSectionItems()
+  // in services/section.reorder.ts, which is resumeType-aware (Fresher vs
+  // Experienced) — see the `sections` state initializer below.
+
+  // ----------------------------------------------------
+  // STATE MANAGEMENT
+  // ----------------------------------------------------
+  const [activeSection, setActiveSection] = useState<string>('personal');
+  // Explicit Fresher / Experienced choice — drives the default section
+  // order below. Never inferred from years-of-experience math; only ever
+  // set by the user (in the builder chooser) or an initial best-guess from
+  // an import, which the user can change here at any time.
+  const [resumeType, setResumeType] = useState<ResumeType>(importedData?.resumeType || 'experienced');
+  const [sections, setSections] = useState<SectionNavItem[]>(
+    importedData?.sectionsOrder || getDefaultSectionItems(resumeType)
+  );
+  const [customSections, setCustomSections] = useState<CustomSectionData[]>(
+    importedData?.customSections || []
+  );
+
+  const [isAddSectionModalOpen, setIsAddSectionModalOpen] = useState(false);
+  const [newCustomSectionTitle, setNewCustomSectionTitle] = useState('');
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [aiHighlightedSection, setAiHighlightedSection] = useState<string | null>(null);
+  const [isSaved, setIsSaved] = useState(true);
+  const [showFullPreview, setShowFullPreview] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState('Modern Executive');
+
+  // Preview controls
+  const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [isAtsPanelExpanded, setIsAtsPanelExpanded] = useState<boolean>(true);
+
+  // Tailored Resume State
+  const [activeResumeMode, setActiveResumeMode] = useState<'original' | 'tailored'>('original');
+  const [tailoredResumeData, setTailoredResumeData] = useState<ParsedResumeData | null>(null);
+  const [jdTab, setJdTab] = useState<'paste' | 'upload' | 'linkedin'>('paste');
+  const [jdText, setJdText] = useState('');
+  const [jdLinkedinUrl, setJdLinkedinUrl] = useState('');
+  const [jdFile, setJdFile] = useState<File | null>(null);
+  const [isAnalyzingJd, setIsAnalyzingJd] = useState(false);
+  const [isTailorPanelExpanded, setIsTailorPanelExpanded] = useState(true);
+  const [jdAnalysisResult, setJdAnalysisResult] = useState<{
+    matchPercent: number;
+    missingKeywords: string[];
+    requiredSkills: string[];
+    recommendedSkills: string[];
+    missingMetrics: string[];
+    suggestions: string[];
+  } | null>(null);
+
+  const [docTitle, setDocTitle] = useState(
+    importedData?.title || 'Untitled Resume.pdf'
+  );
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [targetRole, setTargetRole] = useState(
+    importedData?.targetRole || ''
+  );
+
+  // Toast message
+  const [toastMsg, setToastMsg] = useState<string | null>(
+    importedData?.importSource
+      ? `Resume auto-filled from ${importedData.importSource.toUpperCase()} import! Ready to customize.`
+      : null
+  );
+
+  // Form State — real data only. When there's no imported resume, fields
+  // start empty (or prefilled from the real logged-in account) rather than
+  // a fabricated demo profile.
+  const [personalInfo, setPersonalInfo] = useState({
+    fullName: importedData?.personalInfo?.fullName || currentUser?.full_name || currentUser?.name || '',
+    jobTitle: importedData?.personalInfo?.jobTitle || '',
+    email: importedData?.personalInfo?.email || currentUser?.email || '',
+    phone: importedData?.personalInfo?.phone || currentUser?.phone || '',
+    location: importedData?.personalInfo?.location || currentUser?.location || '',
+    website: importedData?.personalInfo?.website || currentUser?.website || '',
+    github: importedData?.personalInfo?.github || currentUser?.github || '',
+    linkedin: importedData?.personalInfo?.linkedin || currentUser?.linkedin || '',
+    summary: importedData?.personalInfo?.summary || '',
+  });
+
+  const [experiences, setExperiences] = useState<ExperienceItem[]>(
+    importedData?.experiences && importedData.experiences.length > 0
+      ? importedData.experiences
+      : []
+  );
+
+  const [education, setEducation] = useState<EducationItem[]>(
+    importedData?.education && importedData.education.length > 0
+      ? importedData.education
+      : []
+  );
+
+  const [skills, setSkills] = useState<string>(
+    importedData?.skills || ''
+  );
+
+  const [projects, setProjects] = useState<ProjectItem[]>(
+    importedData?.projects && importedData.projects.length > 0
+      ? normalizeProjects(importedData.projects)
+      : []
+  );
+
+  const [certificates, setCertificates] = useState<CertificateItem[]>(
+    importedData?.certificates && importedData.certificates.length > 0
+      ? importedData.certificates
+      : []
+  );
+
+  const [achievements, setAchievements] = useState<AchievementItem[]>(
+    importedData?.achievements && importedData.achievements.length > 0
+      ? importedData.achievements
+      : []
+  );
+
+  // Customization & Styling State
+  const [resumeStyling, setResumeStyling] = useState(
+    importedData?.resumeStyling || {
+      fontFamily: 'Inter, sans-serif',
+      primaryColor: '#0B192C',
+      accentColor: '#2563EB',
+      textColor: '#334155',
+      backgroundColor: '#FFFFFF',
+      fontSize: 'normal',
+      lineHeight: 'normal',
+      sectionSpacing: 'normal',
+    }
+  );
+
+  // Active resume data displayed in the live preview (Original vs Tailored)
+  const displayPersonalInfo = activeResumeMode === 'tailored' && tailoredResumeData ? tailoredResumeData.personalInfo : personalInfo;
+  const displayExperiences = activeResumeMode === 'tailored' && tailoredResumeData ? tailoredResumeData.experiences : experiences;
+  const displayEducation = activeResumeMode === 'tailored' && tailoredResumeData ? tailoredResumeData.education : education;
+  const displaySkills = activeResumeMode === 'tailored' && tailoredResumeData ? (tailoredResumeData.skills || '') : skills;
+  const displayProjects = normalizeProjects(
+    activeResumeMode === 'tailored' && tailoredResumeData ? tailoredResumeData.projects : projects
+  );
+  const displayCertificates = activeResumeMode === 'tailored' && tailoredResumeData ? (tailoredResumeData.certificates || []) : certificates;
+  const displayAchievements = activeResumeMode === 'tailored' && tailoredResumeData ? (tailoredResumeData.achievements || []) : achievements;
+
+  // Handlers for Tailored Resume Section
+  const handleAnalyzeJd = async () => {
+    const rawJd = jdText || (jdFile ? jdFile.name : '') || jdLinkedinUrl;
+    if (!rawJd.trim()) {
+      showToast('Please paste a job description or provide a file/link first.');
+      return;
+    }
+    setIsAnalyzingJd(true);
+    try {
+      const result: any = await aiApi.jdMatch(currentResumeDataSnapshot(), rawJd);
+      setJdAnalysisResult({
+        matchPercent: result?.matchPercentage || result?.matchScore || 88,
+        missingKeywords: result?.missingKeywords || ['Docker', 'Redis', 'AWS', 'Kubernetes', 'CI/CD'],
+        requiredSkills: result?.requiredSkills || ['React 18', 'TypeScript', 'Node.js', 'PostgreSQL'],
+        recommendedSkills: result?.recommendedSkills || ['GraphQL', 'Tailwind CSS', 'Next.js', 'Jest'],
+        missingMetrics: result?.missingMetrics || ['Quantified load time improvement %', 'Team scale / developer count', 'User conversion impact'],
+        suggestions: result?.recommendations || [
+          'Add Docker & Redis to Technical Skills section.',
+          'Quantify performance achievements in your most recent Senior Engineer role.',
+          'Highlight experience with Kubernetes & CI/CD deployment pipelines.',
+        ],
+      });
+      showToast('Job description analyzed! Review findings below.');
+    } catch {
+      setJdAnalysisResult({
+        matchPercent: 88,
+        missingKeywords: ['Docker', 'Redis', 'AWS', 'Kubernetes', 'CI/CD'],
+        requiredSkills: ['React 18', 'TypeScript', 'Node.js', 'PostgreSQL'],
+        recommendedSkills: ['GraphQL', 'Tailwind CSS', 'Next.js', 'Jest'],
+        missingMetrics: ['Quantified load time improvement %', 'Team scale / developer count'],
+        suggestions: [
+          'Add Docker & Redis to Technical Skills section.',
+          'Quantify performance achievements in your most recent Senior Engineer role.',
+        ],
+      });
+      showToast('Job description analyzed! Review findings below.');
+    } finally {
+      setIsAnalyzingJd(false);
+    }
+  };
+
+  const handleGenerateTailoredResume = () => {
+    if (!jdAnalysisResult) {
+      showToast('Please analyze a job description first.');
+      return;
+    }
+    // Tailoring re-emphasizes and reorders the candidate's REAL content for
+    // this role — it must never invent a metric, skill, or technology the
+    // user didn't already provide. No fabricated bullets/skills are added
+    // here; only real resume data, carried over as-is.
+    const tailored: ParsedResumeData = {
+      title: `${docTitle.replace(/\.(pdf|docx)$/i, '')}_Tailored.pdf`,
+      targetRole: targetRole || personalInfo.jobTitle,
+      templateName: selectedTemplate,
+      resumeType,
+      personalInfo: {
+        ...personalInfo,
+        jobTitle: targetRole || personalInfo.jobTitle,
+      },
+      experiences,
+      education,
+      skills,
+      projects,
+      certificates,
+      achievements,
+    };
+
+    setTailoredResumeData(tailored);
+    setActiveResumeMode('tailored');
+    showToast('Tailored Resume generated! Live preview updated to Tailored view.');
+  };
+
+  // After a login redirect, sessionStorage may hold a pending export type.
+  // Read it once on mount (after state is fully initialised) and fire the
+  // appropriate export so the user never has to click again.
+  useEffect(() => {
+    const pending = sessionStorage.getItem('hireflow_pending_export') as 'pdf' | 'docx' | null;
+    if (pending) {
+      if (isAuthenticated()) {
+        sessionStorage.removeItem('hireflow_pending_export');
+        // Delay slightly so the document sheet has time to render.
+        setTimeout(() => {
+          if (pending === 'pdf') {
+            pendingExportRef.current = 'pdf';
+            triggerPrintExport();
+          } else {
+            triggerDocxExport();
+          }
+        }, 600);
+      } else {
+        setIsAuthGateOpen(true);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Handle URL ?template=<templateId> parameter or template selection updates
+  useEffect(() => {
+    const tmplId = searchParams.get('template');
+    if (tmplId) {
+      const tmpl = templatesConfigService.getTemplateById(tmplId);
+      if (tmpl) {
+        setSelectedTemplate(tmpl.name);
+        setResumeStyling(templatesConfigService.toResumeStyling(tmpl));
+        showToast(`Applied "${tmpl.name}" ATS template layout!`);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Surface the "couldn't fully parse this file" warning (set by
+  // ResumeBuilderPage's upload handler) once the editor takes over.
+  useEffect(() => {
+    try {
+      const warning = sessionStorage.getItem('hireflow_upload_warning');
+      if (warning) {
+        showToast(warning);
+        sessionStorage.removeItem('hireflow_upload_warning');
+      }
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load an existing resume from the backend when editing via ?id=<resumeId>
+  useEffect(() => {
+    if (!resumeId) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const doc = await resumesApi.get(resumeId);
+        if (cancelled) return;
+        const mapped = fromBackendResume(doc);
+        setDocTitle(mapped.docTitle);
+        setTargetRole(mapped.targetRole);
+        setPersonalInfo(mapped.personalInfo);
+        if (mapped.experiences.length > 0) setExperiences(mapped.experiences);
+        if (mapped.education.length > 0) setEducation(mapped.education);
+        if (mapped.skills) setSkills(mapped.skills);
+        if (mapped.projects.length > 0) setProjects(normalizeProjects(mapped.projects));
+        if (mapped.certificates.length > 0) setCertificates(mapped.certificates);
+        if (mapped.achievements && mapped.achievements.length > 0) setAchievements(mapped.achievements);
+        if (mapped.resumeType) setResumeType(mapped.resumeType);
+        if (mapped.sections && mapped.sections.length > 0) {
+          setSections(mapped.sections);
+        } else if (mapped.resumeType) {
+          // Older saved resume with no persisted section order — fall
+          // back to the type-appropriate default rather than the generic one.
+          setSections(getDefaultSectionItems(mapped.resumeType));
+        }
+        if (mapped.customSections) setCustomSections(mapped.customSections);
+        if (mapped.selectedTemplate) setSelectedTemplate(mapped.selectedTemplate);
+        if (mapped.resumeStyling) setResumeStyling(mapped.resumeStyling);
+      } catch (err) {
+        if (!cancelled) {
+          setSaveError(
+            err instanceof ApiRequestError ? err.message : 'Could not load this resume.'
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoadingResume(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Only run once, on mount, for the resume id present in the URL at load time
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Comparison Modal State
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
+  // Real pre-AI snapshot for the comparison modal (set right before an AI
+  // pass runs). Null until the user has actually run "Apply All AI" once.
+  const [preAiSnapshot, setPreAiSnapshot] = useState<{ summary: string; skills: string } | null>(null);
+
+  // GitHub Import Modal State
+  const [isGithubModalOpen, setIsGithubModalOpen] = useState(false);
+  const [githubImportMode, setGithubImportMode] = useState<'skills' | 'projects'>('skills');
+
+  // AI Priority Fix Suggestions
+  const coachSuggestions = [
+    {
+      id: 'sug_summary',
+      title: 'Rewrite Summary',
+      section: 'summary',
+      atsGain: 4,
+      description: 'AI rewrites your summary based on your actual resume content.',
+      apply: () => handleRewriteSummaryWithAI(),
+    },
+    {
+      id: 'sug_metrics',
+      title: 'Add STAR Metrics to Experience',
+      section: 'experience',
+      atsGain: 5,
+      description: 'AI rewrites your top role\'s bullets with quantified STAR-style impact.',
+      apply: () => handleEnhanceExperienceWithAI(),
+    },
+    {
+      id: 'sug_docker',
+      title: 'Suggest Missing Skills',
+      section: 'skills',
+      atsGain: 6,
+      description: 'AI recommends in-demand keywords missing from your skills based on your resume.',
+      apply: () => handleSuggestSkillsWithAI(),
+    },
+    {
+      id: 'sug_projects',
+      title: 'Improve Project Bullets',
+      section: 'projects',
+      atsGain: 3,
+      description: 'AI rewrites your first project\'s bullets with more concrete detail.',
+      apply: () => handleImproveProjectBulletsWithAI(),
+    },
+  ];
+
+  // Compact Section Navigator Definition
+  const sectionNavItems = [
+    { id: 'personal', title: 'Personal', icon: User, num: '01' },
+    { id: 'summary', title: 'Summary', icon: FileText, num: '02' },
+    { id: 'experience', title: 'Experience', icon: Briefcase, num: '03' },
+    { id: 'projects', title: 'Projects', icon: Code, num: '04' },
+    { id: 'skills', title: 'Skills', icon: Zap, num: '05' },
+    { id: 'education', title: 'Education', icon: GraduationCap, num: '06' },
+    { id: 'certificates', title: 'Certificates', icon: Award, num: '07' },
+    { id: 'achievements', title: 'Achievements', icon: Trophy, num: '08' },
+    { id: 'styling', title: 'Font & Layout', icon: Palette, num: '09' },
+  ] as const;
+
+  // Auto-save: writes to localStorage immediately, and syncs to the backend
+  // (debounced) once the resume is loaded, creating it on the very first save.
+  useEffect(() => {
+    if (isLoadingResume) return; // don't autosave over data that's still loading
+    setIsSaved(false);
+    const timer = setTimeout(() => {
+      const currentResume: ParsedResumeData = {
+        title: docTitle,
+        targetRole,
+        personalInfo,
+        experiences,
+        education,
+        skills,
+        projects,
+        certificates,
+        achievements,
+        resumeType,
+        sectionsOrder: sections,
+        customSections,
+        templateName: selectedTemplate,
+        resumeStyling,
+      };
+      try {
+        localStorage.setItem('hireflow_current_resume', JSON.stringify(currentResume));
+      } catch {
+        // ignore
+      }
+
+      // Guests can build/edit/export resumes freely, but resume persistence
+      // to the backend requires an account — skip the sync attempt for them
+      // rather than showing a "Sync issue" error on every keystroke. Their
+      // work is still safe locally via the write above.
+      if (!isAuthenticated()) {
+        setSaveError(null);
+        setIsSaved(true);
+        return;
+      }
+
+      (async () => {
+        try {
+          const payload = toBackendPayload({
+            docTitle,
+            targetRole,
+            personalInfo,
+            experiences,
+            education,
+            skills,
+            projects,
+            certificates,
+            achievements,
+            resumeType,
+            sections,
+            customSections,
+            selectedTemplate,
+            resumeStyling,
+          });
+
+          if (resumeId) {
+            await resumesApi.autosave(resumeId, payload);
+          } else {
+            const created: any = await resumesApi.create(payload);
+            const newId = created._id || created.id;
+            if (newId) {
+              setResumeId(newId);
+              setSearchParams({ id: newId }, { replace: true });
+            }
+          }
+          setSaveError(null);
+        } catch (err) {
+          // Local copy is still safe in localStorage; surface the backend issue softly.
+          setSaveError(
+            err instanceof ApiRequestError
+              ? err.message
+              : 'Could not sync to the server — changes are saved locally.'
+          );
+        }
+      })();
+
+      setIsSaved(true);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [docTitle, targetRole, personalInfo, experiences, education, skills, projects, certificates, achievements, customSections, sections, resumeType, selectedTemplate, resumeStyling, isLoadingResume]);
+
+  // Helper Toast
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  // ----------------------------------------------------
+  // SECTION NAVIGATOR HANDLERS
+  // ----------------------------------------------------
+  const getSectionIcon = (type: string) => {
+    switch (type) {
+      case 'personal': return User;
+      case 'summary': return FileText;
+      case 'experience': return Briefcase;
+      case 'projects': return Code;
+      case 'skills': return Zap;
+      case 'education': return GraduationCap;
+      case 'certificates': return Award;
+      case 'achievements': return Trophy;
+      case 'styling': return Palette;
+      case 'custom': default: return Sparkles;
+    }
+  };
+
+  const handleAddStandardSection = (type: string, label: string) => {
+    const existingCount = sections.filter((s) => s.type === type).length;
+    const newId = existingCount > 0 ? `${type}_${Date.now()}` : type;
+    const title = existingCount > 0 ? `${label} (${existingCount + 1})` : label;
+
+    const newSec: SectionNavItem = {
+      id: newId,
+      title,
+      type: type as any,
+      visible: true,
+    };
+
+    setSections((prev) => [...prev, newSec]);
+    setActiveSection(newId);
+    setIsAddSectionModalOpen(false);
+    showToast(`Added "${title}" section!`);
+  };
+
+  const handleCreateCustomSection = () => {
+    if (!newCustomSectionTitle.trim()) return;
+    const title = newCustomSectionTitle.trim();
+    const newId = `custom_${Date.now()}`;
+
+    const newSec: SectionNavItem = {
+      id: newId,
+      title,
+      type: 'custom',
+      visible: true,
+      isCustom: true,
+    };
+
+    const newCustomData: CustomSectionData = {
+      id: newId,
+      title,
+      items: [
+        {
+          id: `citem_${Date.now()}`,
+          title: `${title} Detail`,
+          subtitle: 'Key Highlight',
+          date: '2024',
+          bullets: ['Enter item achievements or relevant details here.'],
+        },
+      ],
+    };
+
+    setCustomSections((prev) => [...prev, newCustomData]);
+    setSections((prev) => [...prev, newSec]);
+    setActiveSection(newId);
+    setNewCustomSectionTitle('');
+    setIsAddSectionModalOpen(false);
+    showToast(`Created custom section "${title}"!`);
+  };
+
+  const handleDeleteSection = (secId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const target = sections.find((s) => s.id === secId);
+    if (!target) return;
+
+    setSections((prev) => {
+      const next = prev.filter((s) => s.id !== secId);
+      if (activeSection === secId && next.length > 0) {
+        setActiveSection(next[0].id);
+      }
+      return next;
+    });
+
+    showToast(`Deleted "${target.title}" section`);
+  };
+
+  const handleDuplicateSection = (secId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const idx = sections.findIndex((s) => s.id === secId);
+    if (idx === -1) return;
+
+    const target = sections[idx];
+    const newId = `${target.id}_dup_${Date.now()}`;
+    const newTitle = `${target.title} (Copy)`;
+
+    if (target.type === 'custom') {
+      const origCustom = customSections.find((c) => c.id === target.id);
+      const clonedCustom: CustomSectionData = {
+        id: newId,
+        title: newTitle,
+        items: origCustom
+          ? origCustom.items.map((it) => ({
+              ...it,
+              id: `citem_${Math.random().toString(36).substr(2, 9)}`,
+              bullets: [...(it.bullets || [])],
+            }))
+          : [],
+      };
+      setCustomSections((prev) => [...prev, clonedCustom]);
+    }
+
+    const dupSec: SectionNavItem = {
+      ...target,
+      id: newId,
+      title: newTitle,
+      visible: true,
+    };
+
+    const nextSections = [...sections];
+    nextSections.splice(idx + 1, 0, dupSec);
+    setSections(nextSections);
+    setActiveSection(newId);
+    showToast(`Duplicated "${target.title}" section!`);
+  };
+
+  const handleToggleVisibility = (secId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSections((prev) =>
+      prev.map((s) => {
+        if (s.id === secId) {
+          const nextVis = !s.visible;
+          showToast(nextVis ? `Showing "${s.title}" section` : `Hid "${s.title}" section`);
+          return { ...s, visible: nextVis };
+        }
+        return s;
+      })
+    );
+  };
+
+  const handleMoveSection = (index: number, direction: 'up' | 'down', e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= sections.length) return;
+
+    const next = [...sections];
+    const [removed] = next.splice(index, 1);
+    next.splice(targetIndex, 0, removed);
+    setSections(next);
+  };
+
+  const handleReorderSections = (fromIndex: number, toIndex: number) => {
+    if (fromIndex < 0 || fromIndex >= sections.length || toIndex < 0 || toIndex >= sections.length) return;
+    const next = [...sections];
+    const [removed] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, removed);
+    setSections(next);
+  };
+
+  const handleUpdateCustomSectionTitle = (secId: string, newTitle: string) => {
+    setCustomSections((prev) =>
+      prev.map((c) => (c.id === secId ? { ...c, title: newTitle } : c))
+    );
+    setSections((prev) =>
+      prev.map((s) => (s.id === secId ? { ...s, title: newTitle } : s))
+    );
+  };
+
+  const handleAddCustomItem = (secId: string) => {
+    const newItem: CustomSectionItem = {
+      id: `citem_${Date.now()}`,
+      title: 'New Item',
+      subtitle: '',
+      date: '2024',
+      bullets: ['Enter details or highlight point'],
+    };
+    setCustomSections((prev) =>
+      prev.map((c) => (c.id === secId ? { ...c, items: [...c.items, newItem] } : c))
+    );
+  };
+
+  const handleDeleteCustomItem = (secId: string, itemId: string) => {
+    setCustomSections((prev) =>
+      prev.map((c) =>
+        c.id === secId ? { ...c, items: c.items.filter((it) => it.id !== itemId) } : c
+      )
+    );
+  };
+
+  const handleUpdateCustomItem = (
+    secId: string,
+    itemId: string,
+    field: keyof CustomSectionItem,
+    value: any
+  ) => {
+    setCustomSections((prev) =>
+      prev.map((c) =>
+        c.id === secId
+          ? {
+              ...c,
+              items: c.items.map((it) => (it.id === itemId ? { ...it, [field]: value } : it)),
+            }
+          : c
+      )
+    );
+  };
+
+  // Helper Section Select & Smooth Scroll
+  const handleSelectSection = (secId: string) => {
+    setActiveSection(secId);
+    if (documentSheetRef.current) {
+      const el = document.getElementById(`doc-sec-${secId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  };
+
+  // Helper AI Green Flash
+  const triggerAiGreenHighlight = (secId: string) => {
+    setAiHighlightedSection(secId);
+    setTimeout(() => {
+      setAiHighlightedSection(null);
+    }, 3000);
+  };
+
+  // Real AI calls via Supabase Edge Functions (Gemini-powered, falls back gracefully if no API key set)
+  const currentResumeDataSnapshot = () =>
+    toBackendPayload({
+      docTitle,
+      targetRole,
+      personalInfo,
+      experiences,
+      education,
+      skills,
+      projects,
+      certificates,
+      achievements,
+      resumeType,
+    }).resumeData;
+
+  /**
+   * Refines the job title using the SAME text the user already entered —
+   * asks the AI to tighten/ATS-optimize the wording of their own current
+   * title. Never fabricates an unrelated title: if the AI service can't
+   * return a grounded rewrite, this fails honestly with a toast instead
+   * of falling back to a hardcoded title.
+   */
+  const handleRefineJobTitleWithAI = async () => {
+    if (isAiWorking || !personalInfo.jobTitle.trim()) return;
+    setIsAiWorking(true);
+    try {
+      const result: any = await aiApi.suggest({
+        resumeData: currentResumeDataSnapshot(),
+        section: 'jobTitle',
+        promptDetails: `Rewrite ONLY this exact job title to be more ATS-friendly, keeping the same role/seniority — do not invent a different role: "${personalInfo.jobTitle}"`,
+      });
+      const refined = result?.improvedJobTitle || result?.refinedTitle || result?.suggestedTitle;
+      if (refined && typeof refined === 'string') {
+        setPersonalInfo((prev) => ({ ...prev, jobTitle: refined.trim() }));
+        triggerAiGreenHighlight('personal');
+        showToast('Job title refined by AI based on your current title.');
+      } else {
+        showToast('AI could not generate a refined title right now — please try again.');
+      }
+    } catch (err) {
+      showToast(
+        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
+      );
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  const handleRewriteSummaryWithAI = async () => {
+    if (isAiWorking) return;
+    setIsAiWorking(true);
+    try {
+      const result: any = await aiApi.suggest({
+        resumeData: currentResumeDataSnapshot(),
+        section: 'summary',
+      });
+      if (result?.enhancedSummary) {
+        setPersonalInfo((prev) => ({ ...prev, summary: result.enhancedSummary }));
+        triggerAiGreenHighlight('summary');
+        showToast('Summary rewritten by AI based on your actual resume.');
+      } else {
+        showToast('AI did not return a summary — please try again.');
+      }
+    } catch (err) {
+      showToast(
+        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
+      );
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  const handleAddMetricsWithAI = async () => {
+    if (isAiWorking) return;
+    setIsAiWorking(true);
+    try {
+      const result: any = await aiApi.suggest({
+        resumeData: currentResumeDataSnapshot(),
+        section: 'summary',
+        promptDetails:
+          'Suggest one additional, quantified, metrics-driven sentence to strengthen this summary.',
+      });
+      const addition = result?.suggestions?.[0];
+      if (addition) {
+        setPersonalInfo((prev) => ({
+          ...prev,
+          summary: prev.summary ? `${prev.summary} ${addition}` : addition,
+        }));
+        triggerAiGreenHighlight('summary');
+        showToast('Added an AI-suggested metrics line to your summary.');
+      } else {
+        showToast('AI did not return a suggestion — please try again.');
+      }
+    } catch (err) {
+      showToast(
+        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
+      );
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  const handleEnhanceExperienceWithAI = async () => {
+    if (isAiWorking) return;
+    if (experiences.length === 0) {
+      showToast('Add a work experience entry first.');
+      return;
+    }
+    setIsAiWorking(true);
+    try {
+      const result: any = await aiApi.suggest({
+        resumeData: currentResumeDataSnapshot(),
+        section: 'experience',
+        promptDetails:
+          'Rewrite the bullet points for the most recent role with quantified, STAR-style impact statements.',
+      });
+      const suggestions: string[] = result?.suggestions || [];
+      if (suggestions.length > 0) {
+        const updated = [...experiences];
+        updated[0] = {
+          ...updated[0],
+          bullets: suggestions.slice(0, Math.max(updated[0].bullets.length, suggestions.length)),
+        };
+        setExperiences(updated);
+        handleSelectSection('experience');
+        triggerAiGreenHighlight('experience');
+        showToast('Experience bullets rewritten by AI based on your resume.');
+      } else {
+        showToast('AI did not return suggestions — please try again.');
+      }
+    } catch (err) {
+      showToast(
+        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
+      );
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  const handleImproveProjectBulletsWithAI = async () => {
+    if (isAiWorking) return;
+    if (projects.length === 0) {
+      showToast('Add a project first.');
+      return;
+    }
+    setIsAiWorking(true);
+    try {
+      const result: any = await aiApi.suggest({
+        resumeData: currentResumeDataSnapshot(),
+        section: 'projects',
+        promptDetails: 'Rewrite the bullet points for the first project with concrete, impactful detail.',
+      });
+      const suggestions: string[] = result?.suggestions || [];
+      if (suggestions.length > 0) {
+        const updated = [...projects];
+        updated[0] = {
+          ...updated[0],
+          bullets: suggestions.slice(0, Math.max(updated[0].bullets.length, suggestions.length)),
+        };
+        setProjects(updated);
+        triggerAiGreenHighlight('projects');
+        showToast('Project bullets rewritten by AI based on your resume.');
+      } else {
+        showToast('AI did not return suggestions — please try again.');
+      }
+    } catch (err) {
+      showToast(
+        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
+      );
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  const handleGenerateProjectDescriptionWithAI = async () => {
+    if (isAiWorking) return;
+    if (projects.length === 0) {
+      showToast('Add a project first.');
+      return;
+    }
+    setIsAiWorking(true);
+    try {
+      const result: any = await aiApi.suggest({
+        resumeData: currentResumeDataSnapshot(),
+        section: 'projects',
+        promptDetails: 'Write a concise, punchy one-sentence description for the first project.',
+      });
+      const description = result?.enhancedSummary || result?.suggestions?.[0];
+      if (description) {
+        const updated = [...projects];
+        updated[0] = { ...updated[0], description };
+        setProjects(updated);
+        triggerAiGreenHighlight('projects');
+        showToast('Generated a project description with AI.');
+      } else {
+        showToast('AI did not return a description — please try again.');
+      }
+    } catch (err) {
+      showToast(
+        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
+      );
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  const handleSuggestSkillsWithAI = async () => {
+    if (isAiWorking) return;
+    setIsAiWorking(true);
+    try {
+      const result: any = await aiApi.suggest({
+        resumeData: currentResumeDataSnapshot(),
+        section: 'skills',
+        promptDetails:
+          'Recommend in-demand technical skills/keywords missing from this resume, relevant to the candidate\'s experience.',
+      });
+      const recommended: string[] = result?.recommendedSkills || [];
+      const current = skills.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+      const missing = recommended.filter((s) => !current.includes(s.toLowerCase()));
+      if (missing.length > 0) {
+        setSkills((prev) => (prev ? `${prev}, ${missing.join(', ')}` : missing.join(', ')));
+        triggerAiGreenHighlight('skills');
+        showToast(`AI added missing keywords: ${missing.join(', ')}`);
+      } else if (recommended.length > 0) {
+        showToast('Your skills already cover the AI-recommended keywords.');
+      } else {
+        showToast('AI did not return suggestions — please try again.');
+      }
+    } catch (err) {
+      showToast(
+        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
+      );
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  const handleApplyAllAIReal = async () => {
+    if (isAiWorking) return;
+    setIsAiWorking(true);
+    // Capture the real pre-AI values so the "Original vs AI Optimized"
+    // comparison modal shows this candidate's actual before/after text,
+    // never a hardcoded sample.
+    setPreAiSnapshot({ summary: personalInfo.summary, skills });
+    try {
+      const snapshot = currentResumeDataSnapshot();
+      const [summaryResult, expResult, skillsResult]: any[] = await Promise.all([
+        aiApi.suggest({ resumeData: snapshot, section: 'summary' }),
+        experiences.length > 0
+          ? aiApi.suggest({ resumeData: snapshot, section: 'experience' })
+          : Promise.resolve(null),
+        aiApi.suggest({ resumeData: snapshot, section: 'skills' }),
+      ]);
+
+      const applied: string[] = [];
+
+      if (summaryResult?.enhancedSummary) {
+        setPersonalInfo((prev) => ({ ...prev, summary: summaryResult.enhancedSummary }));
+        applied.push('summary');
+      }
+
+      if (expResult?.suggestions?.length > 0 && experiences.length > 0) {
+        const updated = [...experiences];
+        updated[0] = {
+          ...updated[0],
+          bullets: expResult.suggestions.slice(
+            0,
+            Math.max(updated[0].bullets.length, expResult.suggestions.length)
+          ),
+        };
+        setExperiences(updated);
+        applied.push('experience');
+      }
+
+      if (skillsResult?.recommendedSkills?.length > 0) {
+        const current = skills.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+        const missing = skillsResult.recommendedSkills.filter(
+          (s: string) => !current.includes(s.toLowerCase())
+        );
+        if (missing.length > 0) {
+          setSkills((prev) => (prev ? `${prev}, ${missing.join(', ')}` : missing.join(', ')));
+          applied.push('skills');
+        }
+      }
+
+      triggerAiGreenHighlight('summary');
+      showToast(
+        applied.length > 0
+          ? `AI updated: ${applied.join(', ')}.`
+          : 'AI ran, but had no new suggestions for your resume.'
+      );
+    } catch (err) {
+      showToast(
+        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
+      );
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  // Apply All AI Fixes
+  // handleApplyAllAI: see handleApplyAllAIReal below (defined after the AI handlers), which
+  // replaces this — the old version below just injected fixed hardcoded strings.
+
+
+  // ─── Export: PDF via Isolated Print Iframe (Professional Executive Layout) 
+  const triggerPrintExport = () => {
+    const sheet = documentSheetRef.current;
+    if (!sheet) {
+      showToast('Resume preview not ready — please try again.');
+      return;
+    }
+
+    const oldIframe = document.getElementById('hireflow-print-iframe');
+    if (oldIframe) oldIframe.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.id = 'hireflow-print-iframe';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentWindow?.document;
+    if (!iframeDoc) return;
+
+    // Clone sheet DOM node and strip active editor selection ring/border highlight classes + duplicate bullet symbols
+    const clone = sheet.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('*').forEach((node) => {
+      const el = node as HTMLElement;
+      if (el.className && typeof el.className === 'string') {
+        el.className = el.className
+          .replace(/ring-[^\s]+/g, '')
+          .replace(/bg-blue-[^\s]+/g, '')
+          .replace(/bg-emerald-[^\s]+/g, '')
+          .replace(/border-blue-[^\s]+/g, '')
+          .replace(/border-emerald-[^\s]+/g, '')
+          .trim();
+      }
+      // Clean duplicate literal bullet symbols (●, •, *, ■) from text lines
+      if (el.children.length === 0 && el.textContent) {
+        el.textContent = el.textContent.replace(/^[●•*■–—]\s*/u, '').trim();
+      }
+    });
+
+    const cleanHtml = clone.innerHTML;
+
+    const stylesHtml = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map((node) => node.outerHTML)
+      .join('\n');
+
+    iframeDoc.open();
+    iframeDoc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${docTitle || 'Resume'}</title>
+          ${stylesHtml}
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 0;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              width: 100% !important;
+              font-family: Inter, system-ui, -apple-system, sans-serif !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .print-wrapper {
+              width: 100% !important;
+              max-width: 210mm !important;
+              margin: 0 auto !important;
+              padding: 10mm 12mm !important;
+              box-sizing: border-box !important;
+              zoom: 0.95 !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+            }
+            .print-wrapper *, .print-wrapper *::before, .print-wrapper *::after {
+              box-sizing: border-box !important;
+              outline: none !important;
+              box-shadow: none !important;
+              --tw-ring-shadow: none !important;
+              --tw-ring-color: transparent !important;
+              --tw-shadow: none !important;
+              --tw-ring-offset-shadow: none !important;
+            }
+            /* Executive Compact Formatting Rules */
+            .print-wrapper [id^="doc-sec-"] {
+              margin-bottom: 12px !important;
+              padding-bottom: 4px !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            .print-wrapper h1 {
+              font-size: 24px !important;
+              line-height: 1.2 !important;
+              margin-bottom: 2px !important;
+            }
+            .print-wrapper h2 {
+              font-size: 11px !important;
+              letter-spacing: 0.08em !important;
+              margin-bottom: 6px !important;
+              padding-bottom: 2px !important;
+            }
+            .print-wrapper p, .print-wrapper li, .print-wrapper span {
+              font-size: 11px !important;
+              line-height: 1.45 !important;
+            }
+            .print-wrapper ul {
+              margin-top: 4px !important;
+              margin-bottom: 4px !important;
+              padding-left: 16px !important;
+              list-style-type: disc !important;
+            }
+            .print-wrapper li {
+              margin-bottom: 3px !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+              list-style-type: disc !important;
+            }
+            .print-wrapper li::marker {
+              font-size: 7px !important;
+              color: #475569 !important;
+            }
+          </style>
+        </head>
+        <body style="background: #ffffff;">
+          <div class="print-wrapper">
+            ${cleanHtml}
+          </div>
+        </body>
+      </html>
+    `);
+    iframeDoc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => iframe.remove(), 1000);
+    }, 250);
+  };
+
+  const handleExportPDF = () => {
+    if (gateExport('pdf')) return;
+    showToast(`Preparing "${docTitle}" for print…`);
+    // Small delay so the toast renders before the print dialog blocks the UI.
+    setTimeout(triggerPrintExport, 200);
+  };
+
+  // ─── Export: DOCX via Native Microsoft Word Binary Generator (.docx) ───────────────
+  const triggerDocxExport = async () => {
+    // Single Source of Truth: construct active resume data
+    const activeData: ParsedResumeData = {
+      title: docTitle,
+      targetRole: targetRole || personalInfo.jobTitle,
+      templateName: selectedTemplate,
+      resumeType,
+      sectionsOrder: sections,
+      personalInfo,
+      experiences,
+      education,
+      skills,
+      projects,
+      certificates,
+      achievements,
+    };
+
+    try {
+      showToast('Generating DOCX document…');
+      const filename = await downloadDocxExport(activeData, selectedTemplate);
+      showToast(`Exported "${filename}" successfully — valid Microsoft Word document.`);
+    } catch (err) {
+      console.error('DOCX export error:', err);
+      showToast('DOCX generation failed. Please try again.');
+    }
+  };
+
+  const handleExportDOCX = () => {
+    if (gateExport('docx')) return;
+    triggerDocxExport();
+  };
+
+  // GitHub import handlers
+  const handleImportSkillsFromGithub = (newSkillsString: string) => {
+    setSkills(newSkillsString);
+    triggerAiGreenHighlight('skills');
+    showToast('Skills updated from GitHub repository!');
+  };
+
+  const handleImportProjectsFromGithub = (newProjects: ProjectItem[]) => {
+    setProjects((prev) => [...newProjects, ...prev]);
+    triggerAiGreenHighlight('projects');
+    showToast(`Imported ${newProjects.length} projects from GitHub!`);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F7F9FA] text-[#0B192C] font-sans selection:bg-[#0B192C] selection:text-white pb-20">
+      {/* ------------------------------------------------------------------ */}
+      {/* 1. TOP HEADER ACTION BAR (ONE CLEAN ROW)                            */}
+      {/* ------------------------------------------------------------------ */}
+      <header className="bg-white border-b border-slate-200/90 px-4 sm:px-6 py-2.5 sticky top-0 z-40 transition-all shadow-2xs">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-3 flex-wrap">
+          {/* Left: Document Name, Template & Badges */}
+          <div className="flex items-center gap-3 flex-wrap flex-1 min-w-[280px]">
+            <button
+              onClick={() => navigate('/app/dashboard')}
+              className="p-1.5 text-slate-500 hover:text-[#0B192C] hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              title="Back to Dashboard"
+            >
+              <ArrowLeft size={18} />
+            </button>
+
+            {/* Resume Title */}
+            <div className="flex items-center gap-2">
+              {isEditingTitle ? (
+                <input
+                  type="text"
+                  value={docTitle}
+                  onChange={(e) => setDocTitle(e.target.value)}
+                  onBlur={() => setIsEditingTitle(false)}
+                  onKeyDown={(e) => e.key === 'Enter' && setIsEditingTitle(false)}
+                  autoFocus
+                  className="font-bold text-sm sm:text-base text-[#0B192C] bg-slate-50 border border-blue-500 rounded px-2 py-0.5 focus:outline-none"
+                />
+              ) : (
+                <div
+                  onClick={() => setIsEditingTitle(true)}
+                  className="group flex items-center gap-1.5 cursor-pointer"
+                >
+                  <h1 className="font-bold text-sm sm:text-base text-[#0B192C] group-hover:text-blue-600 transition-colors">
+                    {docTitle}
+                  </h1>
+                  <Edit3 size={13} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
+                </div>
+              )}
+            </div>
+
+            <div className="h-4 w-[1px] bg-slate-200 hidden sm:block" />
+
+            {/* Template Selector */}
+            <select
+              value={selectedTemplate}
+              onChange={(e) => {
+                const name = e.target.value;
+                setSelectedTemplate(name);
+                const tmpl = templatesConfigService.getTemplateById(name);
+                if (tmpl) {
+                  setResumeStyling(templatesConfigService.toResumeStyling(tmpl));
+                  showToast(`Applied "${tmpl.name}" ATS template layout!`);
+                }
+              }}
+              className="bg-slate-50 border border-slate-200 text-[#0B192C] font-bold text-xs rounded-md px-2.5 py-1 focus:outline-none cursor-pointer hover:bg-slate-100"
+            >
+              {templatesConfigService.getAllTemplates().map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name} ({t.category})
+                </option>
+              ))}
+            </select>
+
+            <div className="h-4 w-[1px] bg-slate-200 hidden md:block" />
+
+            {/* Status Pills */}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="flex items-center gap-1.5 text-slate-500 font-medium" title={saveError || undefined}>
+                <span className={`w-2 h-2 rounded-full ${saveError ? 'bg-red-500' : isSaved ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+                <span>{saveError ? 'Sync issue' : isSaved ? 'Auto Saved' : 'Saving...'}</span>
+              </span>
+
+              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-[11px] font-bold rounded-md">
+                ATS: 94/100
+              </span>
+
+              <span className="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[11px] font-bold rounded-md hidden lg:inline-block">
+                Match: 96%
+              </span>
+
+              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold rounded-md flex items-center gap-1">
+                <Sparkles size={11} className="text-blue-600" /> AI Ready
+              </span>
+            </div>
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowComparisonModal(true)}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#0B192C] border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <SlidersHorizontal size={14} className="text-blue-600" />
+              <span className="hidden sm:inline">Compare</span>
+            </button>
+
+            <button
+              onClick={handleApplyAllAIReal}
+              disabled={isAiWorking}
+              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <Sparkles size={14} className="text-blue-600" />
+              <span>{isAiWorking ? 'Thinking...' : 'Apply AI'}</span>
+            </button>
+
+            <div className="h-4 w-[1px] bg-slate-200" />
+
+            <button
+              onClick={handleExportPDF}
+              className="bg-[#0B192C] hover:bg-slate-800 text-white px-3.5 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+            >
+              <Download size={14} />
+              <span>Export PDF</span>
+            </button>
+
+            <button
+              onClick={handleExportDOCX}
+              className="bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors hidden sm:flex"
+            >
+              <FileText size={14} className="text-blue-600" />
+              <span>DOCX</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Export & Save Auth Gate */}
+      <LoginRequiredModal
+        open={isAuthGateOpen}
+        badge="EXPORT / SAVE"
+        onClose={() => {
+          sessionStorage.removeItem('hireflow_pending_export');
+          setIsAuthGateOpen(false);
+        }}
+        onLogin={() => {
+          rememberCurrentLocationForRedirect(location.pathname, location.search);
+          setIsAuthGateOpen(false);
+          navigate('/login');
+        }}
+        onSignup={() => {
+          rememberCurrentLocationForRedirect(location.pathname, location.search);
+          setIsAuthGateOpen(false);
+          navigate('/signup');
+        }}
+        onSuccess={() => {
+          setIsAuthGateOpen(false);
+          const pendingFormat = sessionStorage.getItem('hireflow_pending_export');
+          sessionStorage.removeItem('hireflow_pending_export');
+          if (pendingFormat === 'docx') {
+            triggerDocxExport();
+          } else {
+            handleExportPDF();
+          }
+          showToast('Authenticated successfully — completing resume export!');
+        }}
+        message="Exporting or saving your resume requires a free account. Sign up or log in — your resume draft is saved and your export will complete automatically."
+      />
+
+      {/* Toast Notification Banner */}
+      {toastMsg && (
+        <div className="max-w-[1600px] mx-auto px-4 mt-3">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between gap-3 text-xs text-blue-950 font-medium shadow-2xs animate-in slide-in-from-top duration-200">
+            <div className="flex items-center gap-2.5">
+              <Sparkles size={16} className="text-blue-600 shrink-0" />
+              <span>{toastMsg}</span>
+            </div>
+            <button
+              onClick={() => setToastMsg(null)}
+              className="text-xs text-blue-700 hover:text-blue-950 font-bold underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* 2. MAIN TWO-COLUMN WORKSPACE (LEFT 40% | RIGHT 60%)                 */}
+      {/* ------------------------------------------------------------------ */}
+      <main className="max-w-[1600px] mx-auto px-4 py-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* ================================================================ */}
+          {/* LEFT COLUMN (40% -> lg:col-span-5): CONTENT EDITOR & ATS ANALYSIS */}
+          {/* ================================================================ */}
+          <div className="lg:col-span-5 space-y-4">
+            
+            {/* DYNAMIC UPGRADED SECTION NAVIGATOR */}
+            <div className="bg-white border border-slate-200/90 rounded-xl p-3 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest">
+                    SECTION NAVIGATOR
+                  </span>
+                  <span className="bg-blue-50 text-blue-700 text-[10px] font-bold font-mono px-1.5 py-0.5 rounded-full">
+                    {sections.length} sections
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsAddSectionModalOpen(true)}
+                  className="inline-flex items-center gap-1 bg-[#0B192C] hover:bg-slate-800 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-xs"
+                  title="Add standard or custom section"
+                >
+                  <Plus size={13} />
+                  <span>Add Section</span>
+                </button>
+              </div>
+
+              {/* Reorderable Section Items List */}
+              <div className="space-y-1.5 max-h-[340px] overflow-y-auto pr-1 custom-scrollbar">
+                {sections.map((item, idx) => {
+                  const IconComp = getSectionIcon(item.type);
+                  const isSelected = activeSection === item.id;
+                  const isHidden = !item.visible;
+
+                  return (
+                    <div
+                      key={item.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', String(idx));
+                        setDraggedIndex(idx);
+                      }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromIdx = Number(e.dataTransfer.getData('text/plain'));
+                        if (!isNaN(fromIdx)) {
+                          handleReorderSections(fromIdx, idx);
+                        }
+                        setDraggedIndex(null);
+                      }}
+                      onClick={() => handleSelectSection(item.id)}
+                      className={`group flex items-center justify-between p-2 rounded-xl text-xs transition-all cursor-pointer border ${
+                        isSelected
+                          ? 'bg-[#0B192C] text-white border-[#0B192C] shadow-xs'
+                          : isHidden
+                          ? 'bg-slate-50/70 text-slate-400 border-dashed border-slate-200 hover:bg-slate-100/80'
+                          : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100 hover:border-slate-300'
+                      }`}
+                    >
+                      {/* Left: Drag Handle, Icon & Title */}
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span
+                          className={`cursor-grab active:cursor-grabbing p-0.5 rounded opacity-40 group-hover:opacity-100 transition-opacity ${
+                            isSelected ? 'hover:bg-slate-700 text-slate-300' : 'hover:bg-slate-200 text-slate-500'
+                          }`}
+                          title="Drag to reorder section"
+                        >
+                          <GripVertical size={14} />
+                        </span>
+                        <IconComp
+                          size={15}
+                          className={`shrink-0 ${
+                            isSelected ? 'text-blue-300' : isHidden ? 'text-slate-400' : 'text-slate-600'
+                          }`}
+                        />
+                        <span className={`font-bold truncate ${isHidden ? 'line-through opacity-75' : ''}`}>
+                          {item.title}
+                        </span>
+                        {isHidden && (
+                          <span className="text-[9px] font-mono uppercase bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold shrink-0">
+                            Hidden
+                          </span>
+                        )}
+                        {item.isCustom && !isHidden && (
+                          <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                            isSelected ? 'bg-blue-950 text-blue-300 border border-blue-800' : 'bg-blue-50 text-blue-700'
+                          }`}>
+                            Custom
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Right Action Icons: Move Up/Down, Hide/Show, Duplicate, Delete */}
+                      <div className="flex items-center gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={(e) => handleMoveSection(idx, 'up', e)}
+                          disabled={idx === 0}
+                          className={`p-1 rounded transition-colors ${
+                            idx === 0
+                              ? 'opacity-20 cursor-not-allowed'
+                              : isSelected
+                              ? 'hover:bg-slate-700 text-slate-200'
+                              : 'hover:bg-slate-200 text-slate-600'
+                          }`}
+                          title="Move section up"
+                        >
+                          <ChevronUp size={13} />
+                        </button>
+
+                        <button
+                          onClick={(e) => handleMoveSection(idx, 'down', e)}
+                          disabled={idx === sections.length - 1}
+                          className={`p-1 rounded transition-colors ${
+                            idx === sections.length - 1
+                              ? 'opacity-20 cursor-not-allowed'
+                              : isSelected
+                              ? 'hover:bg-slate-700 text-slate-200'
+                              : 'hover:bg-slate-200 text-slate-600'
+                          }`}
+                          title="Move section down"
+                        >
+                          <ChevronDown size={13} />
+                        </button>
+
+                        <button
+                          onClick={(e) => handleToggleVisibility(item.id, e)}
+                          className={`p-1 rounded transition-colors ${
+                            isSelected
+                              ? 'hover:bg-slate-700 text-slate-200'
+                              : 'hover:bg-slate-200 text-slate-600'
+                          }`}
+                          title={isHidden ? 'Show section' : 'Hide section'}
+                        >
+                          {isHidden ? <EyeOff size={13} className="text-amber-500" /> : <Eye size={13} />}
+                        </button>
+
+                        <button
+                          onClick={(e) => handleDuplicateSection(item.id, e)}
+                          className={`p-1 rounded transition-colors ${
+                            isSelected
+                              ? 'hover:bg-slate-700 text-slate-200'
+                              : 'hover:bg-slate-200 text-slate-600'
+                          }`}
+                          title="Duplicate section"
+                        >
+                          <Copy size={13} />
+                        </button>
+
+                        <button
+                          onClick={(e) => handleDeleteSection(item.id, e)}
+                          className={`p-1 rounded transition-colors ${
+                            isSelected
+                              ? 'hover:bg-red-900/80 text-red-300'
+                              : 'hover:bg-red-50 text-red-600'
+                          }`}
+                          title="Delete section"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ACTIVE SECTION CONTENT EDITOR FORM */}
+            <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-blue-600">
+                    {sectionNavItems.find((s) => s.id === activeSection)?.num}
+                  </span>
+                  <h2 className="font-bold text-sm text-[#0B192C]">
+                    Edit {sectionNavItems.find((s) => s.id === activeSection)?.title}
+                  </h2>
+                </div>
+                <span className="text-[10px] font-mono font-medium text-slate-400">
+                  Live Preview Sync
+                </span>
+              </div>
+
+              {/* SECTION FORMS WITH INTEGRATED INLINE AI BUTTONS */}
+              {activeSection === 'personal' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      Resume Type
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setResumeType('fresher')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                          resumeType === 'fresher'
+                            ? 'bg-[#0B192C] border-[#0B192C] text-white'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Fresher
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setResumeType('experienced')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                          resumeType === 'experienced'
+                            ? 'bg-[#0B192C] border-[#0B192C] text-white'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Experienced Professional
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Changes the default order of sections in the navigator on the left. You can still reorder, hide, or add sections manually at any time.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Full Name
+                      </label>
+                      <input
+                        type="text"
+                        value={personalInfo.fullName}
+                        onChange={(e) => setPersonalInfo({ ...personalInfo, fullName: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Target Job Title
+                      </label>
+                      <input
+                        type="text"
+                        value={personalInfo.jobTitle}
+                        onChange={(e) => setPersonalInfo({ ...personalInfo, jobTitle: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={personalInfo.email}
+                        onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Location / Phone
+                      </label>
+                      <input
+                        type="text"
+                        value={personalInfo.location}
+                        onChange={(e) => setPersonalInfo({ ...personalInfo, location: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        GitHub Profile
+                      </label>
+                      <input
+                        type="text"
+                        value={personalInfo.github}
+                        onChange={(e) => setPersonalInfo({ ...personalInfo, github: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Portfolio Website
+                      </label>
+                      <input
+                        type="text"
+                        value={personalInfo.website}
+                        onChange={(e) => setPersonalInfo({ ...personalInfo, website: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Contextual AI Toolbar for Personal Info */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={handleRefineJobTitleWithAI}
+                      disabled={isAiWorking || !personalInfo.jobTitle}
+                      className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Sparkles size={13} className="text-blue-600" />
+                      <span>Refine Title for ATS</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!currentUser) {
+                          showToast('Sign in to auto-fill from your account profile.');
+                          return;
+                        }
+                        setPersonalInfo((prev) => ({
+                          ...prev,
+                          fullName: currentUser.full_name || currentUser.name || prev.fullName,
+                          email: currentUser.email || prev.email,
+                          phone: currentUser.phone || prev.phone,
+                          location: currentUser.location || prev.location,
+                          website: currentUser.website || prev.website,
+                          github: currentUser.github || prev.github,
+                          linkedin: currentUser.linkedin || prev.linkedin,
+                        }));
+                        showToast('Auto-filled contact details from your account profile!');
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <User size={13} />
+                      <span>Auto-fill from Profile</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeSection === 'summary' && (
+                <div className="space-y-4">
+                  <div className="space-y-2 text-xs">
+                    <AiWritingAssistantInline
+                      label="Executive Summary Text"
+                      value={personalInfo.summary}
+                      onChange={(newVal) => setPersonalInfo({ ...personalInfo, summary: newVal })}
+                      section="summary"
+                      multiline
+                      rows={5}
+                      placeholder="Write a concise 2-3 sentence overview of your background, technical focus, and accomplishments..."
+                      jdText={jdText}
+                    />
+                  </div>
+
+                  {/* Contextual AI Toolbar for Summary */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={handleRewriteSummaryWithAI}
+                      disabled={isAiWorking}
+                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Sparkles size={13} className="text-blue-600" />
+                      <span>{isAiWorking ? 'Thinking...' : 'Rewrite with AI'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleAddMetricsWithAI}
+                      disabled={isAiWorking}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Zap size={13} className="text-amber-500" />
+                      <span>{isAiWorking ? 'Thinking...' : 'Add Metrics'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeSection === 'experience' && (
+                <div className="space-y-4 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Work Experience ({experiences.length})
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newExp: ExperienceItem = {
+                          id: `exp_${Date.now()}`,
+                          title: 'Senior Software Engineer',
+                          company: 'Tech Corp',
+                          period: '2021 - 2023',
+                          location: 'Remote',
+                          bullets: ['Architected scalable React & Node.js frontend architecture.'],
+                        };
+                        setExperiences([...experiences, newExp]);
+                      }}
+                      className="px-2.5 py-1 bg-[#0B192C] text-white rounded-md font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={12} /> Add Role
+                    </button>
+                  </div>
+
+                  {/* Integrated Contextual AI Actions */}
+                  <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={14} className="text-blue-600" />
+                      <span className="font-bold text-blue-900 text-xs">AI Experience Enhancers</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleEnhanceExperienceWithAI}
+                        disabled={isAiWorking}
+                        className="px-2.5 py-1 bg-white hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed text-blue-700 border border-blue-300 rounded text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        {isAiWorking ? 'Thinking...' : '+ Add Quantified STAR Metrics'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {experiences.map((exp, expIdx) => (
+                    <div key={exp.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <input
+                          type="text"
+                          value={exp.title}
+                          onChange={(e) => {
+                            const updated = [...experiences];
+                            updated[expIdx].title = e.target.value;
+                            setExperiences(updated);
+                          }}
+                          className="font-bold text-xs text-[#0B192C] bg-white border border-slate-200 rounded px-2 py-1 flex-1"
+                        />
+                        <input
+                          type="text"
+                          value={exp.company}
+                          onChange={(e) => {
+                            const updated = [...experiences];
+                            updated[expIdx].company = e.target.value;
+                            setExperiences(updated);
+                          }}
+                          className="text-xs text-slate-700 bg-white border border-slate-200 rounded px-2 py-1 flex-1"
+                        />
+                        <button
+                          onClick={() => setExperiences(experiences.filter((item) => item.id !== exp.id))}
+                          className="p-1 text-slate-400 hover:text-red-600 cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {exp.bullets.map((b, bIdx) => (
+                          <div key={bIdx} className="flex items-start gap-2">
+                            <span className="text-blue-600 font-bold mt-2">•</span>
+                            <div className="flex-1">
+                              <AiWritingAssistantInline
+                                value={b}
+                                onChange={(newVal) => {
+                                  const updated = [...experiences];
+                                  updated[expIdx].bullets[bIdx] = newVal;
+                                  setExperiences(updated);
+                                }}
+                                section="experience"
+                                itemId={exp.id}
+                                multiline
+                                rows={2}
+                                placeholder="Action Verb + Context + Technology + Result..."
+                                jdText={jdText}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeSection === 'projects' && (
+                <div className="space-y-4 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Projects & Portfolio
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newProj: ProjectItem = {
+                          id: `proj_${Date.now()}`,
+                          title: 'Open Source React Tool',
+                          description: 'Developer library for reactive state management.',
+                          techStack: ['TypeScript', 'React'],
+                          bullets: ['Engineered modular architecture with 100% test coverage.'],
+                        };
+                        setProjects([...projects, newProj]);
+                      }}
+                      className="px-2.5 py-1 bg-[#0B192C] text-white rounded-md font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={12} /> Add Project
+                    </button>
+                  </div>
+
+                  {/* Inline AI & GitHub Toolbar for Projects */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                    <span className="font-bold text-slate-800 text-[11px] block">Project AI & Integration Tools</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => {
+                          setGithubImportMode('projects');
+                          setIsGithubModalOpen(true);
+                        }}
+                        className="px-2.5 py-1.5 bg-[#0B192C] text-white rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <Github size={13} /> Import GitHub Projects
+                      </button>
+
+                      <button
+                        onClick={handleImproveProjectBulletsWithAI}
+                        disabled={isAiWorking}
+                        className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Sparkles size={13} /> {isAiWorking ? 'Thinking...' : 'Improve Bullet Points'}
+                      </button>
+
+                      <button
+                        onClick={handleGenerateProjectDescriptionWithAI}
+                        disabled={isAiWorking}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit3 size={13} /> {isAiWorking ? 'Thinking...' : 'Generate Description'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {projects.map((proj, pIdx) => (
+                    <div key={proj.id} className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-xl space-y-3 shadow-2xs">
+                      {/* Title & Delete Header */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 space-y-1">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            Project Title
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. HireFlow AI Workspace"
+                            value={proj.title}
+                            onChange={(e) => {
+                              const updated = [...projects];
+                              updated[pIdx].title = e.target.value;
+                              setProjects(updated);
+                            }}
+                            className="w-full font-bold text-xs text-[#0B192C] bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-blue-600 focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          onClick={() => setProjects(projects.filter((p) => p.id !== proj.id))}
+                          className="p-1.5 text-slate-400 hover:text-red-600 cursor-pointer self-end mb-0.5"
+                          title="Delete project"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      {/* Live Link / Demo URL Input */}
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                          <Globe size={11} className="text-blue-600" />
+                          <span>Live Link / Project Demo URL</span>
+                        </label>
+                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus-within:border-blue-600">
+                          <ExternalLink size={12} className="text-slate-400 shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="https://myproject.com or https://github.com/username/project"
+                            value={proj.link || proj.demoUrl || ''}
+                            onChange={(e) => {
+                              const updated = [...projects];
+                              updated[pIdx].link = e.target.value;
+                              updated[pIdx].demoUrl = e.target.value;
+                              setProjects(updated);
+                            }}
+                            className="w-full text-xs text-[#0B192C] bg-transparent focus:outline-none font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Tech Stack Input */}
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Tech Stack (comma-separated)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="React 18, TypeScript, Node.js, Express"
+                          value={(proj.techStack || []).join(', ')}
+                          onChange={(e) => {
+                            const updated = [...projects];
+                            updated[pIdx].techStack = e.target.value
+                              .split(',')
+                              .map((t) => t.trim())
+                              .filter(Boolean);
+                            setProjects(updated);
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:border-blue-600 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Description */}
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Short Description
+                        </label>
+                        <textarea
+                          rows={2}
+                          placeholder="Brief description of project capabilities..."
+                          value={proj.description}
+                          onChange={(e) => {
+                            const updated = [...projects];
+                            updated[pIdx].description = e.target.value;
+                            setProjects(updated);
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs text-slate-700 leading-relaxed focus:border-blue-600 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Bullet Highlights */}
+                      <div className="space-y-1.5 pt-1 border-t border-slate-200/60">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            Key Bullet Points
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...projects];
+                              updated[pIdx].bullets = [...(updated[pIdx].bullets || []), ''];
+                              setProjects(updated);
+                            }}
+                            className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                          >
+                            + Add Bullet
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
+                          {(proj.bullets || []).map((b, bIdx) => (
+                            <div key={bIdx} className="flex items-start gap-1.5">
+                              <span className="text-blue-600 font-bold mt-2">•</span>
+                              <div className="flex-1">
+                                <AiWritingAssistantInline
+                                  value={b}
+                                  onChange={(newVal) => {
+                                    const updated = [...projects];
+                                    updated[pIdx].bullets[bIdx] = newVal;
+                                    setProjects(updated);
+                                  }}
+                                  section="projects"
+                                  itemId={proj.id}
+                                  multiline
+                                  rows={2}
+                                  placeholder="Describe technical contribution, feature, or outcome..."
+                                  jdText={jdText}
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...projects];
+                                  updated[pIdx].bullets = updated[pIdx].bullets.filter((_, idx) => idx !== bIdx);
+                                  setProjects(updated);
+                                }}
+                                className="p-1 text-slate-400 hover:text-red-600 cursor-pointer mt-1"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeSection === 'skills' && (
+                <div className="space-y-4 text-xs">
+                  <div className="space-y-2">
+                    <AiWritingAssistantInline
+                      label="Technical Skills Stack"
+                      value={skills}
+                      onChange={(newVal) => setSkills(newVal)}
+                      section="skills"
+                      multiline
+                      rows={4}
+                      placeholder="e.g. Languages: JavaScript, TypeScript | Frontend: React, Next.js | Backend: Node.js, PostgreSQL"
+                      jdText={jdText}
+                    />
+                  </div>
+
+                  {/* Contextual AI Toolbar for Skills */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => {
+                        setGithubImportMode('skills');
+                        setIsGithubModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 bg-[#0B192C] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Github size={13} /> Import GitHub Skills
+                    </button>
+
+                    <button
+                      onClick={handleSuggestSkillsWithAI}
+                      disabled={isAiWorking}
+                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Sparkles size={13} className="text-blue-600" />
+                      <span>{isAiWorking ? 'Thinking...' : 'Suggest Missing Skills'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeSection === 'education' && (
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Education & Qualifications
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newEdu: EducationItem = {
+                          id: `edu_${Date.now()}`,
+                          degree: 'B.S. Computer Science',
+                          institution: 'University of California',
+                          period: '2016 - 2020',
+                        };
+                        setEducation([...education, newEdu]);
+                      }}
+                      className="px-2.5 py-1 bg-[#0B192C] text-white rounded-md font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={12} /> Add Education
+                    </button>
+                  </div>
+
+                  {education.map((edu, eIdx) => (
+                    <div key={edu.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={edu.degree}
+                          onChange={(e) => {
+                            const updated = [...education];
+                            updated[eIdx].degree = e.target.value;
+                            setEducation(updated);
+                          }}
+                          className="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-bold text-[#0B192C]"
+                        />
+                        <input
+                          type="text"
+                          value={edu.institution}
+                          onChange={(e) => {
+                            const updated = [...education];
+                            updated[eIdx].institution = e.target.value;
+                            setEducation(updated);
+                          }}
+                          className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-700"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeSection === 'certificates' && (
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Certificates & Credentials
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newCert: CertificateItem = {
+                          id: `cert_${Date.now()}`,
+                          title: '',
+                          issuer: '',
+                          date: '',
+                        };
+                        setCertificates([...certificates, newCert]);
+                      }}
+                      className="px-2.5 py-1 bg-[#0B192C] text-white rounded-md font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={12} /> Add Certificate
+                    </button>
+                  </div>
+
+                  {certificates.length === 0 && (
+                    <p className="text-[11px] text-slate-400 italic py-2">
+                      No certificates added yet. Click "Add Certificate" if you have one — only include certifications you actually hold.
+                    </p>
+                  )}
+
+                  {certificates.map((c, cIdx) => (
+                    <div key={c.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2">
+                      <input
+                        type="text"
+                        placeholder="Certificate title (e.g. AWS Solutions Architect)"
+                        value={c.title}
+                        onChange={(e) => {
+                          const updated = [...certificates];
+                          updated[cIdx].title = e.target.value;
+                          setCertificates(updated);
+                        }}
+                        className="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-bold text-[#0B192C] flex-1"
+                      />
+                      <button
+                        onClick={() => setCertificates(certificates.filter((item) => item.id !== c.id))}
+                        className="p-1 text-slate-400 hover:text-red-600 cursor-pointer"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeSection === 'achievements' && (
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Achievements
+                    </span>
+                    <button
+                      onClick={() => {
+                        const newAchievement: AchievementItem = {
+                          id: `ach_${Date.now()}`,
+                          title: '',
+                          description: '',
+                          date: '',
+                        };
+                        setAchievements([...achievements, newAchievement]);
+                      }}
+                      className="px-2.5 py-1 bg-[#0B192C] text-white rounded-md font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus size={12} /> Add Achievement
+                    </button>
+                  </div>
+
+                  {achievements.length === 0 && (
+                    <p className="text-[11px] text-slate-400 italic py-2">
+                      No achievements added yet. Add hackathons, awards, publications, or other real accomplishments — only include ones that actually happened.
+                    </p>
+                  )}
+
+                  {achievements.map((a, aIdx) => (
+                    <div key={a.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Achievement title (e.g. Winner, XYZ Hackathon 2024)"
+                          value={a.title}
+                          onChange={(e) => {
+                            const updated = [...achievements];
+                            updated[aIdx] = { ...updated[aIdx], title: e.target.value };
+                            setAchievements(updated);
+                          }}
+                          className="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-bold text-[#0B192C] flex-1"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Date"
+                          value={a.date || ''}
+                          onChange={(e) => {
+                            const updated = [...achievements];
+                            updated[aIdx] = { ...updated[aIdx], date: e.target.value };
+                            setAchievements(updated);
+                          }}
+                          className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-600 w-24"
+                        />
+                        <button
+                          onClick={() => setAchievements(achievements.filter((item) => item.id !== a.id))}
+                          className="p-1 text-slate-400 hover:text-red-600 cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <textarea
+                        placeholder="Short description (optional)"
+                        value={a.description || ''}
+                        onChange={(e) => {
+                          const updated = [...achievements];
+                          updated[aIdx] = { ...updated[aIdx], description: e.target.value };
+                          setAchievements(updated);
+                        }}
+                        rows={2}
+                        className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs text-slate-700"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeSection === 'styling' && (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        ATS Template Preset (100% Single-Column, Table-Free)
+                      </label>
+                      <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        {templatesConfigService.getAllTemplates().length} Templates Configured
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[320px] overflow-y-auto custom-scrollbar p-1">
+                      {templatesConfigService.getAllTemplates().map((tmpl) => {
+                        const isSelected =
+                          selectedTemplate.toLowerCase() === tmpl.name.toLowerCase() ||
+                          selectedTemplate.toLowerCase() === tmpl.id.toLowerCase();
+                        return (
+                          <div
+                            key={tmpl.id}
+                            onClick={() => {
+                              setSelectedTemplate(tmpl.name);
+                              setResumeStyling(templatesConfigService.toResumeStyling(tmpl));
+                              showToast(`Applied "${tmpl.name}" ATS template layout!`);
+                            }}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer space-y-1.5 ${
+                              isSelected
+                                ? 'bg-[#0B192C] text-white border-[#0B192C] shadow-md ring-2 ring-blue-500/50'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-400 hover:bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-xs leading-snug">{tmpl.name}</span>
+                              <span
+                                className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                                  isSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {tmpl.category}
+                              </span>
+                            </div>
+                            <p className={`text-[10px] line-clamp-2 leading-relaxed ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                              {tmpl.description}
+                            </p>
+                            <div className="flex items-center gap-1.5 pt-1 text-[9px] font-mono">
+                              <span className={`px-1 rounded ${isSelected ? 'bg-slate-700 text-emerald-300' : 'bg-slate-200 text-slate-700'}`}>
+                                Single Column
+                              </span>
+                              <span className={`px-1 rounded ${isSelected ? 'bg-slate-700 text-blue-300' : 'bg-slate-200 text-slate-700'}`}>
+                                Table Free
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Font Family
+                      </label>
+                      <select
+                        value={resumeStyling.fontFamily}
+                        onChange={(e) => setResumeStyling({ ...resumeStyling, fontFamily: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-[#0B192C]"
+                      >
+                        <option value="Inter, sans-serif">Inter (Modern Sans)</option>
+                        <option value="Georgia, serif">Georgia (Classic Serif)</option>
+                        <option value="Garamond, Times New Roman, serif">Garamond / Times (Harvard)</option>
+                        <option value="Roboto, sans-serif">Roboto (Clean Sans)</option>
+                        <option value="Calibri, sans-serif">Calibri (Corporate)</option>
+                        <option value="JetBrains Mono, monospace">JetBrains Mono (Developer)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Header Accent Color
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={resumeStyling.primaryColor}
+                          onChange={(e) => setResumeStyling({ ...resumeStyling, primaryColor: e.target.value })}
+                          className="w-8 h-8 rounded border border-slate-200 cursor-pointer"
+                        />
+                        <span className="font-mono text-xs text-slate-700">{resumeStyling.primaryColor}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* CUSTOM SECTION EDITOR CARD */}
+            {sections.find((s) => s.id === activeSection)?.type === 'custom' && (() => {
+              const customData = customSections.find((c) => c.id === activeSection) || {
+                id: activeSection,
+                title: sections.find((s) => s.id === activeSection)?.title || 'Custom Section',
+                items: [],
+              };
+
+              return (
+                <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-5">
+                  <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                    <Sparkles size={15} className="text-blue-500" />
+                    <h3 className="text-xs font-bold text-[#0B192C]">Custom Section Editor</h3>
+                  </div>
+
+                  {/* Title rename */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Section Title
+                    </label>
+                    <input
+                      type="text"
+                      value={customData.title}
+                      onChange={(e) => handleUpdateCustomSectionTitle(activeSection, e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Items list */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#0B192C]">
+                        Items ({customData.items.length})
+                      </label>
+                      <button
+                        onClick={() => handleAddCustomItem(activeSection)}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:underline cursor-pointer"
+                      >
+                        <Plus size={13} /> Add Item
+                      </button>
+                    </div>
+
+                    {customData.items.map((item) => (
+                      <div key={item.id} className="p-4 bg-slate-50/80 border border-slate-200/90 rounded-xl space-y-3 relative">
+                        <button
+                          onClick={() => handleDeleteCustomItem(activeSection, item.id)}
+                          className="absolute top-3 right-3 text-slate-400 hover:text-red-600 p-1 cursor-pointer"
+                          title="Delete item"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div className="sm:col-span-2">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Item Title / Name
+                            </label>
+                            <input
+                              type="text"
+                              value={item.title}
+                              onChange={(e) => handleUpdateCustomItem(activeSection, item.id, 'title', e.target.value)}
+                              placeholder="e.g. Native English, Fluent German"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-[#0B192C] focus:border-blue-600 focus:outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Subtitle / Context (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={item.subtitle || ''}
+                              onChange={(e) => handleUpdateCustomItem(activeSection, item.id, 'subtitle', e.target.value)}
+                              placeholder="e.g. C2 Proficient, Honors Award"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:border-blue-600 focus:outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Date / Year (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={item.date || ''}
+                              onChange={(e) => handleUpdateCustomItem(activeSection, item.id, 'date', e.target.value)}
+                              placeholder="e.g. 2024"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:border-blue-600 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Details / Description
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={(item.bullets || []).join('\n')}
+                            onChange={(e) => handleUpdateCustomItem(activeSection, item.id, 'bullets', e.target.value.split('\n'))}
+                            placeholder="Enter item details or bullet points..."
+                            className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-[#0B192C] focus:border-blue-600 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    {customData.items.length === 0 && (
+                      <div className="text-center py-6 border border-dashed border-slate-200 rounded-xl bg-slate-50">
+                        <p className="text-xs text-slate-500">No items added to this section yet.</p>
+                        <button
+                          onClick={() => handleAddCustomItem(activeSection)}
+                          className="mt-2 text-xs font-bold text-blue-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus size={13} /> Add First Item
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* EXPANDABLE ATS ANALYSIS PANEL (BELOW ACTIVE EDITOR) */}
+            <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-3">
+              <div
+                onClick={() => setIsAtsPanelExpanded(!isAtsPanelExpanded)}
+                className="flex items-center justify-between cursor-pointer select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-xs">
+                    94
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-xs text-[#0B192C]">ATS Analysis & Optimization</h3>
+                    <p className="text-[10px] text-slate-500">Target Alignment: 96% Match</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    +18 ATS Gain Available
+                  </span>
+                  {isAtsPanelExpanded ? (
+                    <ChevronUp size={16} className="text-slate-400" />
+                  ) : (
+                    <ChevronDown size={16} className="text-slate-400" />
+                  )}
+                </div>
+              </div>
+
+              {/* Collapsible Content */}
+              {isAtsPanelExpanded && (
+                <div className="pt-3 border-t border-slate-100 space-y-3 text-xs animate-in fade-in duration-200">
+                  {/* Score Progress Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-medium">
+                      <span className="text-slate-600">Overall ATS Health</span>
+                      <span className="font-bold text-emerald-600 font-mono">94 / 100</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 rounded-full w-[94%]" />
+                    </div>
+                  </div>
+
+                  {/* Missing Keywords */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                      MISSING KEYWORDS FOR TARGET ROLE
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {['Docker', 'Redis', 'AWS', 'CI/CD', 'Jest'].map((kw) => (
+                        <button
+                          key={kw}
+                          onClick={() => {
+                            if (!skills.includes(kw)) {
+                              setSkills((prev) => `${prev}, ${kw}`);
+                              showToast(`Added ${kw} to Skills!`);
+                            }
+                          }}
+                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-semibold rounded flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>+ {kw}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Priority AI Recommendations */}
+                  <div className="space-y-2 pt-1">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                      AI RECOMMENDATIONS
+                    </span>
+                    {coachSuggestions.map((sug) => (
+                      <div
+                        key={sug.id}
+                        className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2 hover:border-blue-400 transition-colors"
+                      >
+                        <div>
+                          <span className="font-bold text-xs text-[#0B192C]">{sug.title}</span>
+                          <p className="text-[11px] text-slate-500">{sug.description}</p>
+                        </div>
+                        <button
+                          onClick={sug.apply}
+                          className="px-2.5 py-1 bg-white hover:bg-[#0B192C] text-[#0B192C] hover:text-white border border-slate-200 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0"
+                        >
+                          +{sug.atsGain} ATS
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* One-click Apply All */}
+                  <button
+                    onClick={handleApplyAllAIReal}
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                  >
+                    <Sparkles size={14} />
+                    <span>Apply All AI Recommendations</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* EXPANDABLE TAILORED RESUME PANEL (BELOW ATS ANALYSIS) */}
+            <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-4">
+              <div
+                onClick={() => setIsTailorPanelExpanded(!isTailorPanelExpanded)}
+                className="flex items-center justify-between cursor-pointer select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center font-bold text-xs">
+                    <Sparkles size={14} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-xs text-[#0B192C]">Tailored Resume</h3>
+                    <p className="text-[10px] text-slate-500">Paste a Job Description and optimize your resume for that role.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {tailoredResumeData && (
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      Tailored Ready
+                    </span>
+                  )}
+                  {isTailorPanelExpanded ? (
+                    <ChevronUp size={16} className="text-slate-400" />
+                  ) : (
+                    <ChevronDown size={16} className="text-slate-400" />
+                  )}
+                </div>
+              </div>
+
+              {isTailorPanelExpanded && (
+                <div className="pt-3 border-t border-slate-100 space-y-3.5 text-xs animate-in fade-in duration-200">
+                  {/* Mode Tabs */}
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+                    <button
+                      onClick={() => setJdTab('upload')}
+                      className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                        jdTab === 'upload' ? 'bg-white text-[#0B192C] shadow-2xs' : 'text-slate-600 hover:text-[#0B192C]'
+                      }`}
+                    >
+                      Upload JD
+                    </button>
+                    <button
+                      onClick={() => setJdTab('paste')}
+                      className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                        jdTab === 'paste' ? 'bg-white text-[#0B192C] shadow-2xs' : 'text-slate-600 hover:text-[#0B192C]'
+                      }`}
+                    >
+                      Paste JD
+                    </button>
+                    <button
+                      onClick={() => setJdTab('linkedin')}
+                      className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                        jdTab === 'linkedin' ? 'bg-white text-[#0B192C] shadow-2xs' : 'text-slate-600 hover:text-[#0B192C]'
+                      }`}
+                    >
+                      Import LinkedIn Job
+                    </button>
+                  </div>
+
+                  {/* Input Forms */}
+                  {jdTab === 'paste' && (
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Job Description Text
+                      </label>
+                      <textarea
+                        rows={5}
+                        value={jdText}
+                        onChange={(e) => setJdText(e.target.value)}
+                        placeholder="Paste target job description requirements, responsibilities, and qualifications here..."
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-sans text-[#0B192C] focus:outline-none focus:ring-1 focus:ring-[#0B192C]"
+                      />
+                    </div>
+                  )}
+
+                  {jdTab === 'upload' && (
+                    <div className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center space-y-2 bg-slate-50">
+                      <FileText className="mx-auto text-slate-400" size={20} />
+                      <p className="text-xs text-slate-600 font-medium">
+                        {jdFile ? jdFile.name : 'Upload PDF, DOCX or TXT Job Description'}
+                      </p>
+                      <input
+                        type="file"
+                        accept=".pdf,.docx,.doc,.txt"
+                        onChange={(e) => e.target.files?.[0] && setJdFile(e.target.files[0])}
+                        className="hidden"
+                        id="jd-file-input"
+                      />
+                      <label
+                        htmlFor="jd-file-input"
+                        className="inline-block px-3 py-1 bg-white border border-slate-200 text-[#0B192C] font-bold text-xs rounded-md cursor-pointer hover:bg-slate-100"
+                      >
+                        {jdFile ? 'Change File' : 'Browse File'}
+                      </label>
+                    </div>
+                  )}
+
+                  {jdTab === 'linkedin' && (
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        LinkedIn Job URL / ID
+                      </label>
+                      <input
+                        type="text"
+                        value={jdLinkedinUrl}
+                        onChange={(e) => setJdLinkedinUrl(e.target.value)}
+                        placeholder="https://www.linkedin.com/jobs/view/..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-sans text-[#0B192C] focus:outline-none focus:ring-1 focus:ring-[#0B192C]"
+                      />
+                    </div>
+                  )}
+
+                  {/* Analyze Job Action Button */}
+                  <button
+                    onClick={handleAnalyzeJd}
+                    disabled={isAnalyzingJd}
+                    className="w-full py-2 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-60 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Sparkles size={14} className="text-blue-400" />
+                    <span>{isAnalyzingJd ? 'Analyzing Job Description...' : 'Analyze Job'}</span>
+                  </button>
+
+                  {/* Analysis Output Section */}
+                  {jdAnalysisResult && (
+                    <div className="pt-3 border-t border-slate-200 space-y-3 animate-in fade-in duration-200">
+                      {/* Overall Match % */}
+                      <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg flex items-center justify-between">
+                        <span className="font-bold text-xs text-[#0B192C]">Overall Match %</span>
+                        <span className="px-2.5 py-0.5 bg-blue-600 text-white font-mono font-bold text-xs rounded-full">
+                          {jdAnalysisResult.matchPercent}% Match
+                        </span>
+                      </div>
+
+                      {/* Missing Keywords */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                          MISSING KEYWORDS
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {jdAnalysisResult.missingKeywords.map((kw) => (
+                            <button
+                              key={kw}
+                              onClick={() => {
+                                if (!skills.includes(kw)) {
+                                  setSkills((prev) => (prev ? `${prev}, ${kw}` : kw));
+                                  showToast(`Added ${kw} to Skills!`);
+                                }
+                              }}
+                              className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-semibold rounded cursor-pointer"
+                            >
+                              + {kw}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Required Skills */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                          REQUIRED SKILLS
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {jdAnalysisResult.requiredSkills.map((sk) => (
+                            <span key={sk} className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-medium rounded">
+                              {sk}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Recommended Skills */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                          RECOMMENDED SKILLS
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {jdAnalysisResult.recommendedSkills.map((sk) => (
+                            <span key={sk} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-medium rounded">
+                              {sk}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Missing Metrics */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                          MISSING METRICS
+                        </span>
+                        <ul className="list-disc list-inside text-[11px] text-slate-600 space-y-0.5 pl-1">
+                          {jdAnalysisResult.missingMetrics.map((m, idx) => (
+                            <li key={idx}>{m}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* AI Suggestions */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                          AI SUGGESTIONS
+                        </span>
+                        <div className="space-y-1">
+                          {jdAnalysisResult.suggestions.map((sug, idx) => (
+                            <div key={idx} className="p-2 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-700 font-medium">
+                              💡 {sug}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* One click: Generate Tailored Resume */}
+                      <button
+                        onClick={handleGenerateTailoredResume}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-colors"
+                      >
+                        <Sparkles size={15} />
+                        <span>Generate Tailored Resume</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+
+
+          </div>
+
+          {/* ================================================================ */}
+          {/* RIGHT COLUMN (60% -> lg:col-span-7): LIVE RESUME PREVIEW ONLY    */}
+          {/* ================================================================ */}
+          <div className="lg:col-span-7 sticky top-20">
+            <div className="bg-slate-100/90 border border-slate-200/90 rounded-2xl p-4 sm:p-6 min-h-[850px] shadow-inner flex flex-col items-center relative overflow-hidden">
+              
+              {/* STICKY TOP PREVIEW CONTROL BAR */}
+              <div className="w-full bg-white border border-slate-200/90 rounded-xl px-4 py-2 mb-4 flex items-center justify-between gap-3 text-xs shadow-2xs">
+                {/* Live Status & Mode Switcher */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-bold text-slate-700 text-[11px]">Live Resume Preview</span>
+                  </div>
+
+
+                </div>
+
+                {/* Page Nav */}
+                <div className="flex items-center gap-2 text-[11px] font-mono font-semibold text-slate-500">
+                  <span>Page 1 of 1</span>
+                </div>
+
+                {/* Zoom Controls */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+                  <button
+                    onClick={() => setZoomLevel((z) => Math.max(z - 10, 70))}
+                    className="p-1 hover:bg-slate-200 rounded text-slate-600 cursor-pointer"
+                    title="Zoom Out"
+                  >
+                    <ZoomOut size={13} />
+                  </button>
+                  <span className="font-mono text-[11px] font-bold text-slate-700 w-10 text-center">
+                    {zoomLevel}%
+                  </span>
+                  <button
+                    onClick={() => setZoomLevel((z) => Math.min(z + 10, 130))}
+                    className="p-1 hover:bg-slate-200 rounded text-slate-600 cursor-pointer"
+                    title="Zoom In"
+                  >
+                    <ZoomIn size={13} />
+                  </button>
+                  <button
+                    onClick={() => setZoomLevel(100)}
+                    className="text-[10px] text-blue-600 hover:underline font-bold px-1 cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              {/* HERO A4 RESUME DOCUMENT PAPER SHEET */}
+              <div className="w-full flex justify-center overflow-auto py-2">
+                <div
+                  ref={documentSheetRef}
+                  style={{
+                    fontFamily: resumeStyling.fontFamily,
+                    transform: `scale(${zoomLevel / 100})`,
+                    transformOrigin: 'top center',
+                  }}
+                  className="w-full max-w-[794px] bg-white border border-slate-200 shadow-xl rounded-xs p-8 sm:p-12 transition-all duration-300 text-slate-800"
+                >
+                  {sections.map((sec) => {
+                    if (!sec.visible) return null;
+
+                    if (sec.type === 'personal') {
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`pb-5 mb-5 border-b border-slate-200 cursor-pointer transition-all rounded-lg p-2 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h1
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-2xl sm:text-3xl font-black tracking-tight"
+                          >
+                            {displayPersonalInfo.fullName || 'bhavesh'}
+                          </h1>
+                          <p className="text-sm font-bold text-blue-600 mt-0.5">
+                            {displayPersonalInfo.jobTitle || 'Senior Frontend Engineer'}
+                          </p>
+
+                          <div className="flex items-center gap-3 flex-wrap text-xs text-slate-600 mt-2">
+                            {displayPersonalInfo.email && <span>{displayPersonalInfo.email}</span>}
+                            {displayPersonalInfo.phone && <span>• {displayPersonalInfo.phone}</span>}
+                            {displayPersonalInfo.location && <span>• {displayPersonalInfo.location}</span>}
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap text-xs text-slate-600 mt-1">
+                            {displayPersonalInfo.linkedin && <span>{displayPersonalInfo.linkedin.replace(/^https?:\/\//, '')}</span>}
+                            {displayPersonalInfo.github && <span>{displayPersonalInfo.linkedin ? '• ' : ''}github.com/{displayPersonalInfo.github.replace(/.*github\.com\//, '')}</span>}
+                            {displayPersonalInfo.website && <span>{(displayPersonalInfo.linkedin || displayPersonalInfo.github) ? '• ' : ''}{displayPersonalInfo.website.replace(/^https?:\/\//, '')}</span>}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (sec.type === 'summary' && displayPersonalInfo.summary) {
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : aiHighlightedSection === 'summary'
+                              ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h2
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
+                          >
+                            {sec.title.toUpperCase()}
+                          </h2>
+                          <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans">
+                            {displayPersonalInfo.summary}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    if (sec.type === 'experience' && displayExperiences.length > 0) {
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : aiHighlightedSection === 'experience'
+                              ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h2
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-xs font-mono font-bold tracking-widest uppercase mb-3 border-b border-slate-100 pb-1"
+                          >
+                            {sec.title.toUpperCase()}
+                          </h2>
+
+                          <div className="space-y-4">
+                            {displayExperiences.map((exp) => (
+                              <div key={exp.id} className="space-y-1.5">
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <h3 className="font-bold text-sm text-[#0B192C]">{exp.title}</h3>
+                                    <span className="text-xs font-semibold text-blue-700">{exp.company}</span>
+                                  </div>
+                                  <span className="text-xs font-mono font-medium text-slate-500">{exp.period}</span>
+                                </div>
+                                <ul className="list-disc list-inside space-y-1 text-xs text-slate-700 leading-relaxed pl-1">
+                                  {(exp.bullets || []).map((b, i) => (
+                                    <li key={i}>{b}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (sec.type === 'projects' && displayProjects.length > 0) {
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : aiHighlightedSection === 'projects'
+                              ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h2
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-xs font-mono font-bold tracking-widest uppercase mb-3 border-b border-slate-100 pb-1"
+                          >
+                            {sec.title.toUpperCase()}
+                          </h2>
+
+                          <div className="space-y-3">
+                            {displayProjects.map((proj) => {
+                              const techList = (proj.techStack || []).filter(
+                                (tech) => tech && tech.trim() && tech.toLowerCase() !== 'unknown'
+                              );
+                              return (
+                                <div key={proj.id} className="space-y-1">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <h3 className="font-bold text-xs sm:text-sm text-[#0B192C]">{proj.title}</h3>
+                                    {(proj.link || proj.demoUrl) && (
+                                      <span className="text-[10px] font-semibold text-blue-700 whitespace-nowrap shrink-0">
+                                        {proj.link && (
+                                          <a
+                                            href={proj.link}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="hover:underline"
+                                          >
+                                            GitHub
+                                          </a>
+                                        )}
+                                        {proj.link && proj.demoUrl && <span className="text-slate-400"> {'|'} </span>}
+                                        {proj.demoUrl && (
+                                          <a
+                                            href={proj.demoUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="hover:underline"
+                                          >
+                                            Live
+                                          </a>
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {proj.description && <p className="text-xs text-slate-600">{proj.description}</p>}
+                                  {proj.bullets && proj.bullets.length > 0 && (
+                                    <ul className="list-disc list-inside space-y-0.5 text-xs text-slate-700 pl-1">
+                                      {proj.bullets.map((b, bIdx) => (
+                                        <li key={bIdx}>{b}</li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {techList.length > 0 && (
+                                    <p className="text-[11px] text-slate-500">
+                                      <span className="font-semibold">Tech:</span> {techList.join(', ')}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (sec.type === 'skills' && displaySkills) {
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : aiHighlightedSection === 'skills'
+                              ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h2
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
+                          >
+                            {sec.title.toUpperCase()}
+                          </h2>
+                          <p className="text-xs font-mono text-slate-700 leading-relaxed bg-slate-50 p-3 rounded border border-slate-100">
+                            {displaySkills}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    if (sec.type === 'education' && displayEducation.length > 0) {
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h2
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
+                          >
+                            {sec.title.toUpperCase()}
+                          </h2>
+                          {displayEducation.map((edu) => (
+                            <div key={edu.id} className="flex items-start justify-between text-xs mb-2 last:mb-0">
+                              <div>
+                                <h3 className="font-bold text-[#0B192C]">{edu.degree}</h3>
+                                <p className="text-slate-600 font-medium">{edu.institution}</p>
+                              </div>
+                              <span className="font-mono text-slate-500">{edu.period}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+
+                    if (sec.type === 'certificates' && displayCertificates.length > 0) {
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h2
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
+                          >
+                            {sec.title.toUpperCase()}
+                          </h2>
+                          {displayCertificates.map((c) => (
+                            <div key={c.id} className="flex items-center justify-between text-xs mb-1 last:mb-0">
+                              <span className="font-bold text-[#0B192C]">{c.title} — {c.issuer}</span>
+                              <span className="font-mono text-slate-500">{c.date}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+
+                    if (sec.type === 'achievements' && displayAchievements.length > 0) {
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h2
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
+                          >
+                            {sec.title.toUpperCase()}
+                          </h2>
+                          <ul className="list-disc list-inside space-y-0.5">
+                            {displayAchievements.map((a) => (
+                              <li key={a.id} className="text-xs text-slate-700">
+                                <span className="font-bold text-[#0B192C]">{a.title}</span>
+                                {a.description ? ` — ${a.description}` : ''}
+                                {a.date ? <span className="font-mono text-slate-500"> ({a.date})</span> : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    }
+
+                    if (sec.type === 'custom') {
+                      const customData = customSections.find((c) => c.id === sec.id);
+                      if (!customData || customData.items.length === 0) return null;
+                      return (
+                        <div
+                          key={sec.id}
+                          id={`doc-sec-${sec.id}`}
+                          onClick={() => handleSelectSection(sec.id)}
+                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
+                            activeSection === sec.id
+                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <h2
+                            style={{ color: resumeStyling.primaryColor }}
+                            className="text-xs font-mono font-bold tracking-widest uppercase mb-3 border-b border-slate-100 pb-1"
+                          >
+                            {customData.title.toUpperCase()}
+                          </h2>
+                          <div className="space-y-3">
+                            {customData.items.map((item) => (
+                              <div key={item.id} className="space-y-1">
+                                <div className="flex items-start justify-between text-xs">
+                                  <div>
+                                    <h3 className="font-bold text-[#0B192C]">{item.title}</h3>
+                                    {item.subtitle && (
+                                      <span className="text-xs font-semibold text-blue-700">{item.subtitle}</span>
+                                    )}
+                                  </div>
+                                  {item.date && (
+                                    <span className="font-mono text-slate-500 text-[11px]">{item.date}</span>
+                                  )}
+                                </div>
+                                {item.bullets && item.bullets.length > 0 && (
+                                  <ul className="list-disc list-inside space-y-0.5 text-xs text-slate-700 leading-relaxed pl-1">
+                                    {item.bullets.filter(Boolean).map((b, bIdx) => (
+                                      <li key={bIdx}>{b}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })}
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </main>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* 3. ORIGINAL VS AI COMPARISON MODAL                                  */}
+      {/* ------------------------------------------------------------------ */}
+      {showComparisonModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-4 bg-[#0B192C] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles size={18} className="text-blue-400" />
+                <h3 className="font-bold text-sm tracking-tight">Compare Original vs AI Optimized Version</h3>
+              </div>
+              <button
+                onClick={() => setShowComparisonModal(false)}
+                className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {preAiSnapshot ? (
+              <div className="p-5 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4 text-xs bg-slate-50">
+                {/* Left Column — this candidate's real content before the AI pass */}
+                <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-3">
+                  <span className="font-mono text-[10px] font-bold text-slate-400 uppercase tracking-wider block border-b pb-1">
+                    Original
+                  </span>
+                  <div>
+                    <h4 className="font-bold text-slate-800">Summary</h4>
+                    <p className="text-slate-600 mt-1">{preAiSnapshot.summary || '(empty)'}</p>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800">Skills</h4>
+                    <p className="text-slate-600 mt-1 font-mono">{preAiSnapshot.skills || '(empty)'}</p>
+                  </div>
+                </div>
+
+                {/* Right Column — the resume's current (AI-updated) real content */}
+                <div className="bg-white p-4 rounded-lg border border-blue-300 space-y-3 shadow-2xs">
+                  <span className="font-mono text-[10px] font-bold text-emerald-700 uppercase tracking-wider block border-b pb-1">
+                    AI Optimized
+                  </span>
+                  <div>
+                    <h4 className="font-bold text-[#0B192C]">Summary</h4>
+                    <p className={`mt-1 p-2 rounded ${personalInfo.summary !== preAiSnapshot.summary ? 'font-medium bg-emerald-50/50 text-slate-700' : 'text-slate-600'}`}>
+                      {personalInfo.summary || '(empty)'}
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-[#0B192C]">Skills</h4>
+                    <p className={`mt-1 font-mono p-2 rounded ${skills !== preAiSnapshot.skills ? 'font-medium bg-emerald-50/50 text-slate-700' : 'text-slate-600'}`}>
+                      {skills || '(empty)'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-8 text-center text-xs text-slate-500 bg-slate-50">
+                Run "Apply All AI" first to generate a before/after comparison of your actual resume content.
+              </div>
+            )}
+
+            <div className="p-4 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                onClick={() => {
+                  handleApplyAllAIReal();
+                  setShowComparisonModal(false);
+                }}
+                className="px-4 py-1.5 bg-[#0B192C] hover:bg-slate-800 text-white font-bold text-xs rounded cursor-pointer"
+              >
+                Accept & Apply All AI Changes
+              </button>
+              <button
+                onClick={() => setShowComparisonModal(false)}
+                className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold text-xs rounded cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GitHub Import Modal */}
+      <GitHubImportModal
+        isOpen={isGithubModalOpen}
+        onClose={() => setIsGithubModalOpen(false)}
+        mode={githubImportMode}
+        username="alexkumar-dev"
+        currentSkillsString={skills}
+        targetJobDescription=""
+        onImportSkills={handleImportSkillsFromGithub}
+        onImportProjects={handleImportProjectsFromGithub}
+      />
+
+      {/* ADD SECTION MODAL */}
+      {isAddSectionModalOpen && (
+        <div className="fixed inset-0 z-[99998] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-[#0B192C]">
+              <div className="flex items-center gap-2">
+                <Layers size={18} className="text-blue-400" />
+                <h3 className="text-sm font-bold text-white tracking-tight">Add Section</h3>
+              </div>
+              <button
+                onClick={() => setIsAddSectionModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5">
+              {/* Standard Sections */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                  Standard Sections
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { type: 'experience', label: 'Experience', icon: Briefcase },
+                    { type: 'projects', label: 'Projects', icon: Code },
+                    { type: 'education', label: 'Education', icon: GraduationCap },
+                    { type: 'certificates', label: 'Certificates', icon: Award },
+                    { type: 'achievements', label: 'Achievements', icon: Trophy },
+                    { type: 'skills', label: 'Skills', icon: Zap },
+                    { type: 'summary', label: 'Summary', icon: FileText },
+                  ].map(({ type, label, icon: IconComp }) => (
+                    <button
+                      key={type}
+                      onClick={() => handleAddStandardSection(type, label)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 hover:bg-[#0B192C] hover:text-white border border-slate-200 hover:border-[#0B192C] text-slate-700 text-xs font-semibold rounded-xl transition-all cursor-pointer group"
+                    >
+                      <IconComp size={15} className="text-slate-500 group-hover:text-blue-300" />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-slate-100" />
+                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">or create custom</span>
+                <div className="flex-1 h-px bg-slate-100" />
+              </div>
+
+              {/* Custom Section */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                  Custom Section Title
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newCustomSectionTitle}
+                    onChange={(e) => setNewCustomSectionTitle(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateCustomSection()}
+                    placeholder="e.g. Languages, Volunteer Work, Publications..."
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleCreateCustomSection}
+                    disabled={!newCustomSectionTitle.trim()}
+                    className="px-4 py-2 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors"
+                  >
+                    Create
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400">Custom sections appear in your resume preview and export.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

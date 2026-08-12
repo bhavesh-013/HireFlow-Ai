@@ -1,0 +1,244 @@
+{
+  "version": "1.0.0",
+  "description": "HireFlow ATS Scoring Rules — single source of truth for client engine and Gemini prompt.",
+  "geminiConstraints": {
+    "neverFabricate": [
+      "Experience entries or positions",
+      "Companies or employers",
+      "Projects or portfolio items",
+      "Numerical metrics (percentages, dollar amounts, time saved)",
+      "Revenue or cost figures",
+      "User numbers, MAU, DAU, or stream counts",
+      "Downloads or installation metrics",
+      "GitHub stars, forks, or repo metrics",
+      "Salary or compensation details",
+      "Dates, years, or employment durations"
+    ],
+    "onlyImproveExisting": true,
+    "allowedActions": [
+      "Rewrite for clarity and impact",
+      "Grammar, spelling, and typo fixes",
+      "STAR format restructuring",
+      "Action verb enhancement",
+      "Formatting & layout optimization",
+      "Keyword optimization using candidate's actual domain stack",
+      "Professional & executive tone refinement"
+    ],
+    "missingMetricsRule": "If metrics are missing from existing bullets, NEVER invent numbers. Use placeholders like [X]% or XX% (e.g. 'Reduced latency by [X]%') so the user can insert real numbers."
+  },
+  "scoringWeights": {
+    "formatting": 5,
+    "sections": 4,
+    "sectionOrder": 3,
+    "keywords": 8,
+    "hardSkills": 7,
+    "softSkills": 3,
+    "experience": 8,
+    "projects": 5,
+    "education": 4,
+    "certificates": 3,
+    "achievements": 5,
+    "metrics": 6,
+    "starFormat": 5,
+    "actionVerbs": 5,
+    "leadership": 4,
+    "readability": 4,
+    "bulletQuality": 4,
+    "length": 3,
+    "title": 2,
+    "contactInfo": 3,
+    "github": 2,
+    "portfolio": 2,
+    "linkedin": 2,
+    "missingSkills": 5,
+    "repeatedKeywords": 2,
+    "keywordDensity": 3,
+    "dateConsistency": 2,
+    "grammarTypos": 3
+  },
+  "thresholds": {
+    "idealWordCount": { "min": 400, "max": 800 },
+    "idealBulletCount": { "min": 2, "max": 6 },
+    "idealBulletLength": { "min": 10, "max": 30 },
+    "keywordDensityPercent": { "min": 1.5, "max": 3.5 },
+    "maxRepeatedKeywordCount": 3,
+    "minMetricsPerExperienceEntry": 1,
+    "minActionVerbsPercent": 70,
+    "maxSimilarKeywordRepetitions": 2
+  },
+  "requiredSections": [
+    "experience",
+    "education",
+    "skills"
+  ],
+  "recommendedSections": [
+    "summary",
+    "projects",
+    "certificates",
+    "achievements",
+    "contact"
+  ],
+  "preferredSectionOrder": [
+    "contact",
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+    "certificates",
+    "achievements"
+  ],
+  "sectionNameSynonyms": {
+    "experience": ["work experience", "professional experience", "employment history", "work history", "career history", "experience"],
+    "education": ["education", "academic background", "educational background", "academic history", "degrees"],
+    "skills": ["skills", "technical skills", "core competencies", "technologies", "tech stack", "expertise", "proficiencies"],
+    "summary": ["summary", "professional summary", "profile", "about me", "objective", "career objective", "executive summary"],
+    "projects": ["projects", "personal projects", "side projects", "portfolio projects", "key projects", "selected projects"],
+    "certificates": ["certifications", "certificates", "credentials", "licenses", "professional certifications"],
+    "achievements": ["achievements", "awards", "honors", "accomplishments", "recognition"],
+    "contact": ["contact", "contact information", "personal information", "personal details"]
+  },
+  "strongActionVerbs": [
+    "architected", "engineered", "spearheaded", "orchestrated", "pioneered", "championed",
+    "transformed", "overhauled", "revolutionized", "accelerated", "optimized", "streamlined",
+    "automated", "deployed", "scaled", "migrated", "integrated", "designed", "built",
+    "developed", "implemented", "launched", "led", "managed", "directed", "established",
+    "delivered", "executed", "drove", "generated", "increased", "reduced", "improved",
+    "enhanced", "created", "produced", "negotiated", "collaborated", "mentored", "trained",
+    "coordinated", "supervised", "analyzed", "evaluated", "assessed", "identified",
+    "resolved", "diagnosed", "debugged", "refactored", "consolidated", "standardized",
+    "documented", "audited", "configured", "provisioned", "containerized", "modularized",
+    "bootstrapped", "prototyped", "shipped", "published", "presented", "authored"
+  ],
+  "weakActionVerbs": [
+    "helped", "assisted", "supported", "worked on", "participated in", "was responsible for",
+    "contributed to", "involved in", "handled", "did", "made", "used", "utilized",
+    "tried", "attempted", "worked with", "was part of", "took part in", "did work on"
+  ],
+  "softSkillKeywords": [
+    "leadership", "communication", "teamwork", "collaboration", "problem-solving",
+    "critical thinking", "adaptability", "time management", "project management",
+    "stakeholder management", "cross-functional", "mentoring", "coaching", "presentation",
+    "negotiation", "decision-making", "strategic thinking", "analytical", "detail-oriented",
+    "self-motivated", "results-driven", "customer-focused", "agile", "scrum", "kanban"
+  ],
+  "leadershipKeywords": [
+    "led", "managed", "directed", "supervised", "mentored", "coached", "trained",
+    "spearheaded", "championed", "orchestrated", "oversaw", "coordinated", "facilitated",
+    "established", "founded", "initiated", "owned", "drove", "executive", "principal",
+    "senior", "head of", "director", "vp", "chief", "lead", "architect", "team lead",
+    "tech lead", "cross-functional", "stakeholders", "c-suite", "board"
+  ],
+  "starPatternSignatures": {
+    "situation": ["when", "during", "as part of", "in response to", "faced with", "given", "while"],
+    "task": ["tasked with", "responsible for", "assigned to", "needed to", "required to", "goal was"],
+    "action": ["implemented", "developed", "built", "created", "designed", "led", "managed", "automated", "refactored", "deployed"],
+    "result": ["%", "increased", "decreased", "reduced", "improved", "achieved", "delivered", "saved", "generated", "resulted in", "leading to", "resulting in", "x faster", "x improvement"]
+  },
+  "metricsPatterns": [
+    "\\d+%",
+    "\\$\\d+",
+    "\\d+x",
+    "\\d+k",
+    "\\d+M",
+    "\\d+\\+",
+    "\\d+ million",
+    "\\d+ thousand",
+    "\\d+ users",
+    "\\d+ customers",
+    "\\d+ team members",
+    "\\d+ engineers",
+    "\\d+ months",
+    "\\d+ weeks",
+    "\\d+ hours",
+    "\\d+ seconds",
+    "\\d+ms",
+    "uptime",
+    "latency",
+    "throughput",
+    "revenue",
+    "cost",
+    "savings",
+    "performance"
+  ],
+  "dateFormats": {
+    "acceptable": [
+      "MM/YYYY", "Month YYYY", "YYYY–YYYY", "YYYY - YYYY",
+      "Month YYYY – Month YYYY", "Month YYYY - Present",
+      "YYYY – Present", "YYYY - Present"
+    ],
+    "inconsistencySignals": [
+      "mixed numeric and text months",
+      "missing years",
+      "future dates",
+      "end date before start date"
+    ]
+  },
+  "contactFields": {
+    "required": ["email", "phone"],
+    "recommended": ["location", "linkedin", "github"],
+    "optional": ["website", "portfolio"]
+  },
+  "grammarPatterns": {
+    "commonTypos": [
+      ["teh ", "the "], ["recieve", "receive"], ["occured", "occurred"],
+      ["seperate", "separate"], ["definately", "definitely"], ["accomodate", "accommodate"],
+      ["begining", "beginning"], ["beleive", "believe"], ["calender", "calendar"],
+      ["concious", "conscious"], ["embarass", "embarrass"], ["enviroment", "environment"],
+      ["existance", "existence"], ["foriegn", "foreign"], ["freind", "friend"],
+      ["grammer", "grammar"], ["goverment", "government"], ["independant", "independent"],
+      ["knowlege", "knowledge"], ["liason", "liaison"], ["maintenence", "maintenance"],
+      ["millenium", "millennium"], ["necesary", "necessary"], ["occassion", "occasion"],
+      ["paralel", "parallel"], ["percieve", "perceive"], ["personel", "personnel"],
+      ["posession", "possession"], ["prefered", "preferred"], ["presense", "presence"],
+      ["privelege", "privilege"], ["publically", "publicly"], ["reccommend", "recommend"],
+      ["relevent", "relevant"], ["restaraunt", "restaurant"], ["rythm", "rhythm"],
+      ["sucess", "success"], ["suprise", "surprise"], ["tommorrow", "tomorrow"],
+      ["untill", "until"], ["wierd", "weird"], ["acieved", "achieved"],
+      ["managment", "management"], ["developement", "development"], ["architecutre", "architecture"]
+    ],
+    "grammarIssues": [
+      "passive voice overuse",
+      "inconsistent tense (present vs past)",
+      "missing periods at bullet end",
+      "all caps usage",
+      "double spaces",
+      "trailing commas"
+    ]
+  },
+  "scoringLevels": {
+    "excellent": { "min": 85, "label": "Excellent", "color": "emerald" },
+    "good": { "min": 70, "label": "Good", "color": "blue" },
+    "average": { "min": 50, "label": "Average", "color": "amber" },
+    "poor": { "min": 0, "label": "Needs Work", "color": "red" }
+  },
+  "priorityLevels": {
+    "Critical": { "estimatedGainRange": [8, 15], "description": "Fix immediately — likely causing ATS rejection" },
+    "High": { "estimatedGainRange": [4, 8], "description": "Fix soon — significantly affecting score" },
+    "Medium": { "estimatedGainRange": [2, 4], "description": "Fix when possible — moderate impact" },
+    "Low": { "estimatedGainRange": [0, 2], "description": "Nice to have — minor improvement" }
+  },
+  "synonymTerms": {
+    "react": ["react.js", "reactjs", "react 18", "react native"],
+    "javascript": ["js", "es6", "ecmascript"],
+    "typescript": ["ts"],
+    "node.js": ["node", "nodejs", "node js"],
+    "python": ["py", "python3"],
+    "postgresql": ["postgres", "pgsql"],
+    "aws": ["amazon web services", "amazon cloud"],
+    "gcp": ["google cloud platform", "google cloud"],
+    "azure": ["microsoft azure"],
+    "docker": ["containers", "containerization", "docker container"],
+    "kubernetes": ["k8s"],
+    "ci/cd": ["cicd", "continuous integration", "github actions", "gitlab ci", "jenkins"],
+    "rest api": ["rest", "restful", "restful api", "restful apis"],
+    "tailwind css": ["tailwind", "tailwindcss"],
+    "css": ["css3", "scss", "sass"],
+    "html": ["html5"],
+    "express": ["express.js", "expressjs"],
+    "vue": ["vue.js", "vuejs"],
+    "angular": ["angular.js", "angularjs"],
+    "next.js": ["next", "nextjs"]
+  }
+}
+
