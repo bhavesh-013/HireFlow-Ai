@@ -62,7 +62,8 @@ import {
   SectionNavItem,
   CustomSectionData,
   CustomSectionItem,
-  ResumeType
+  ResumeType,
+  ATSFullReport
 } from '../types';
 import { GitHubImportModal } from '../components/app/GitHubImportModal';
 import { templatesConfigService } from '../services/templateConfig.service';
@@ -70,6 +71,11 @@ import { getDefaultSectionItems } from '../services/section.reorder';
 import { normalizeProjects } from '../utils/resumeTextParser';
 import { AiWritingAssistantInline } from '../components/app/AiWritingAssistantInline';
 import { downloadDocxExport, generateSafeFilename } from '../services/export.service';
+import { atsEngine } from '../services/ats.engine';
+import { FRESHER_DEFAULT_RESUME } from '../data/defaultFresherResume';
+import { EXPERIENCED_DEFAULT_RESUME } from '../data/defaultExperiencedResume';
+import FresherDocumentView from '../components/templates/FresherDocumentView';
+import ExperiencedDocumentView from '../components/templates/ExperiencedDocumentView';
 
 export default function ResumeEditorPage() {
   const location = useLocation();
@@ -124,12 +130,16 @@ export default function ResumeEditorPage() {
   // order below. Never inferred from years-of-experience math; only ever
   // set by the user (in the builder chooser) or an initial best-guess from
   // an import, which the user can change here at any time.
+  const isFresherInit = (importedData?.resumeType || 'experienced') === 'fresher';
+  const defaultFresher = isFresherInit ? FRESHER_DEFAULT_RESUME : null;
+
   const [resumeType, setResumeType] = useState<ResumeType>(importedData?.resumeType || 'experienced');
+  const [fresherLayoutMode, setFresherLayoutMode] = useState<'auto' | '1-column' | '2-column'>('auto');
   const [sections, setSections] = useState<SectionNavItem[]>(
-    importedData?.sectionsOrder || getDefaultSectionItems(resumeType)
+    importedData?.sectionsOrder || defaultFresher?.sectionsOrder || getDefaultSectionItems(resumeType)
   );
   const [customSections, setCustomSections] = useState<CustomSectionData[]>(
-    importedData?.customSections || []
+    importedData?.customSections || defaultFresher?.customSections || []
   );
 
   const [isAddSectionModalOpen, setIsAddSectionModalOpen] = useState(false);
@@ -142,7 +152,13 @@ export default function ResumeEditorPage() {
 
   // Preview controls
   const [zoomLevel, setZoomLevel] = useState<number>(100);
-  const [isAtsPanelExpanded, setIsAtsPanelExpanded] = useState<boolean>(true);
+  const [isAtsPanelExpanded, setIsAtsPanelExpanded] = useState<boolean>(false);
+
+  // Live ATS Engine State (Calculated 100% deterministically from active resume & JD)
+  const [atsReport, setAtsReport] = useState<ATSFullReport | null>(null);
+  const [liveAtsScore, setLiveAtsScore] = useState<number | null>(null);
+  const [isCalculatingAts, setIsCalculatingAts] = useState<boolean>(false);
+  const [atsLastUpdatedText, setAtsLastUpdatedText] = useState<string>('Updated just now');
 
   // Tailored Resume State
   const [activeResumeMode, setActiveResumeMode] = useState<'original' | 'tailored'>('original');
@@ -163,11 +179,11 @@ export default function ResumeEditorPage() {
   } | null>(null);
 
   const [docTitle, setDocTitle] = useState(
-    importedData?.title || 'Untitled Resume.pdf'
+    importedData?.title || defaultFresher?.title || 'Untitled Resume.pdf'
   );
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [targetRole, setTargetRole] = useState(
-    importedData?.targetRole || ''
+    importedData?.targetRole || defaultFresher?.targetRole || ''
   );
 
   // Toast message
@@ -181,15 +197,15 @@ export default function ResumeEditorPage() {
   // start empty (or prefilled from the real logged-in account) rather than
   // a fabricated demo profile.
   const [personalInfo, setPersonalInfo] = useState({
-    fullName: importedData?.personalInfo?.fullName || currentUser?.full_name || currentUser?.name || '',
-    jobTitle: importedData?.personalInfo?.jobTitle || '',
-    email: importedData?.personalInfo?.email || currentUser?.email || '',
-    phone: importedData?.personalInfo?.phone || currentUser?.phone || '',
-    location: importedData?.personalInfo?.location || currentUser?.location || '',
+    fullName: importedData?.personalInfo?.fullName || defaultFresher?.personalInfo?.fullName || currentUser?.full_name || currentUser?.name || '',
+    jobTitle: importedData?.personalInfo?.jobTitle || defaultFresher?.personalInfo?.jobTitle || '',
+    email: importedData?.personalInfo?.email || defaultFresher?.personalInfo?.email || currentUser?.email || '',
+    phone: importedData?.personalInfo?.phone || defaultFresher?.personalInfo?.phone || currentUser?.phone || '',
+    location: importedData?.personalInfo?.location || defaultFresher?.personalInfo?.location || currentUser?.location || '',
     website: importedData?.personalInfo?.website || currentUser?.website || '',
-    github: importedData?.personalInfo?.github || currentUser?.github || '',
-    linkedin: importedData?.personalInfo?.linkedin || currentUser?.linkedin || '',
-    summary: importedData?.personalInfo?.summary || '',
+    github: importedData?.personalInfo?.github || defaultFresher?.personalInfo?.github || currentUser?.github || '',
+    linkedin: importedData?.personalInfo?.linkedin || defaultFresher?.personalInfo?.linkedin || currentUser?.linkedin || '',
+    summary: importedData?.personalInfo?.summary || defaultFresher?.personalInfo?.summary || '',
   });
 
   const [experiences, setExperiences] = useState<ExperienceItem[]>(
@@ -201,38 +217,38 @@ export default function ResumeEditorPage() {
   const [education, setEducation] = useState<EducationItem[]>(
     importedData?.education && importedData.education.length > 0
       ? importedData.education
-      : []
+      : (defaultFresher?.education || [])
   );
 
   const [skills, setSkills] = useState<string>(
-    importedData?.skills || ''
+    importedData?.skills || defaultFresher?.skills || ''
   );
 
   const [projects, setProjects] = useState<ProjectItem[]>(
     importedData?.projects && importedData.projects.length > 0
       ? normalizeProjects(importedData.projects)
-      : []
+      : (defaultFresher?.projects ? normalizeProjects(defaultFresher.projects) : [])
   );
 
   const [certificates, setCertificates] = useState<CertificateItem[]>(
     importedData?.certificates && importedData.certificates.length > 0
       ? importedData.certificates
-      : []
+      : (defaultFresher?.certificates || [])
   );
 
   const [achievements, setAchievements] = useState<AchievementItem[]>(
     importedData?.achievements && importedData.achievements.length > 0
       ? importedData.achievements
-      : []
+      : (defaultFresher?.achievements || [])
   );
 
   // Customization & Styling State
   const [resumeStyling, setResumeStyling] = useState(
     importedData?.resumeStyling || {
       fontFamily: 'Inter, sans-serif',
-      primaryColor: '#0B192C',
-      accentColor: '#2563EB',
-      textColor: '#334155',
+      primaryColor: '#000000',
+      accentColor: '#000000',
+      textColor: '#111827',
       backgroundColor: '#FFFFFF',
       fontSize: 'normal',
       lineHeight: 'normal',
@@ -262,31 +278,16 @@ export default function ResumeEditorPage() {
     try {
       const result: any = await aiApi.jdMatch(currentResumeDataSnapshot(), rawJd);
       setJdAnalysisResult({
-        matchPercent: result?.matchPercentage || result?.matchScore || 88,
-        missingKeywords: result?.missingKeywords || ['Docker', 'Redis', 'AWS', 'Kubernetes', 'CI/CD'],
-        requiredSkills: result?.requiredSkills || ['React 18', 'TypeScript', 'Node.js', 'PostgreSQL'],
-        recommendedSkills: result?.recommendedSkills || ['GraphQL', 'Tailwind CSS', 'Next.js', 'Jest'],
-        missingMetrics: result?.missingMetrics || ['Quantified load time improvement %', 'Team scale / developer count', 'User conversion impact'],
-        suggestions: result?.recommendations || [
-          'Add Docker & Redis to Technical Skills section.',
-          'Quantify performance achievements in your most recent Senior Engineer role.',
-          'Highlight experience with Kubernetes & CI/CD deployment pipelines.',
-        ],
+        matchPercent: result?.matchPercentage || result?.matchScore || 0,
+        missingKeywords: result?.missingKeywords || [],
+        requiredSkills: result?.requiredSkills || [],
+        recommendedSkills: result?.recommendedSkills || [],
+        missingMetrics: result?.missingMetrics || [],
+        suggestions: result?.recommendations || [],
       });
       showToast('Job description analyzed! Review findings below.');
     } catch {
-      setJdAnalysisResult({
-        matchPercent: 88,
-        missingKeywords: ['Docker', 'Redis', 'AWS', 'Kubernetes', 'CI/CD'],
-        requiredSkills: ['React 18', 'TypeScript', 'Node.js', 'PostgreSQL'],
-        recommendedSkills: ['GraphQL', 'Tailwind CSS', 'Next.js', 'Jest'],
-        missingMetrics: ['Quantified load time improvement %', 'Team scale / developer count'],
-        suggestions: [
-          'Add Docker & Redis to Technical Skills section.',
-          'Quantify performance achievements in your most recent Senior Engineer role.',
-        ],
-      });
-      showToast('Job description analyzed! Review findings below.');
+      showToast('Could not analyze the job description — please try again.');
     } finally {
       setIsAnalyzingJd(false);
     }
@@ -566,6 +567,88 @@ export default function ResumeEditorPage() {
 
     return () => clearTimeout(timer);
   }, [docTitle, targetRole, personalInfo, experiences, education, skills, projects, certificates, achievements, customSections, sections, resumeType, selectedTemplate, resumeStyling, isLoadingResume]);
+
+  // ----------------------------------------------------
+  // LIVE DETERMINISTIC ATS SCORE CALCULATION (~1s Debounce)
+  // ----------------------------------------------------
+  // Constructs an active resume snapshot respecting section visibility & order
+  const buildActiveResumeSnapshot = React.useCallback((): ParsedResumeData => {
+    const visibleSectionIds = new Set(
+      sections.filter((s) => s.visible).map((s) => s.id)
+    );
+
+    return {
+      id: resumeId || undefined,
+      title: docTitle,
+      targetRole: targetRole || personalInfo.jobTitle,
+      templateName: selectedTemplate,
+      resumeType,
+      resumeStyling,
+      personalInfo: visibleSectionIds.has('personal')
+        ? personalInfo
+        : {
+            fullName: '',
+            jobTitle: '',
+            email: '',
+            phone: '',
+            location: '',
+            summary: '',
+          },
+      experiences: visibleSectionIds.has('experience') ? experiences : [],
+      education: visibleSectionIds.has('education') ? education : [],
+      skills: visibleSectionIds.has('skills') ? (skills || '') : '',
+      projects: visibleSectionIds.has('projects') ? projects : [],
+      certificates: visibleSectionIds.has('certificates') ? certificates : [],
+      achievements: visibleSectionIds.has('achievements') ? achievements : [],
+      customSections: customSections.filter((c) => visibleSectionIds.has(c.id)),
+      sectionsOrder: sections,
+    };
+  }, [
+    resumeId,
+    docTitle,
+    targetRole,
+    personalInfo,
+    selectedTemplate,
+    resumeType,
+    resumeStyling,
+    experiences,
+    education,
+    skills,
+    projects,
+    certificates,
+    achievements,
+    customSections,
+    sections,
+  ]);
+
+  // Recalculate ATS score automatically whenever the user edits, adds, deletes, hides, or reorders any section
+  useEffect(() => {
+    if (isLoadingResume) return;
+
+    setIsCalculatingAts(true);
+
+    const timer = setTimeout(() => {
+      try {
+        const snapshot = buildActiveResumeSnapshot();
+        const report = atsEngine.analyzeResume(snapshot, {
+          jobDescription: jdText && jdText.trim().length >= 10 ? jdText : undefined,
+        });
+
+        // Clamp score (0 - 99): Never claim 100% ATS compatibility
+        const clampedScore = Math.min(report.finalScore, 99);
+
+        setAtsReport(report);
+        setLiveAtsScore(clampedScore);
+        setAtsLastUpdatedText('Updated just now');
+      } catch (err) {
+        console.error('Error calculating live ATS score:', err);
+      } finally {
+        setIsCalculatingAts(false);
+      }
+    }, 1000); // 1-second debounce
+
+    return () => clearTimeout(timer);
+  }, [buildActiveResumeSnapshot, jdText, isLoadingResume]);
 
   // Helper Toast
   const showToast = (msg: string) => {
@@ -1128,22 +1211,21 @@ export default function ResumeEditorPage() {
     const iframeDoc = iframe.contentWindow?.document;
     if (!iframeDoc) return;
 
-    // Clone sheet DOM node and strip active editor selection ring/border highlight classes + duplicate bullet symbols
+    // Clone sheet DOM node and strip active editor selection ring highlights + hover styles
     const clone = sheet.cloneNode(true) as HTMLElement;
     clone.querySelectorAll('*').forEach((node) => {
       const el = node as HTMLElement;
       if (el.className && typeof el.className === 'string') {
         el.className = el.className
-          .replace(/ring-[^\s]+/g, '')
-          .replace(/bg-blue-[^\s]+/g, '')
-          .replace(/bg-emerald-[^\s]+/g, '')
-          .replace(/border-blue-[^\s]+/g, '')
-          .replace(/border-emerald-[^\s]+/g, '')
+          .replace(/ring-2\s+ring-[^\s]+/g, '')
+          .replace(/bg-blue-50\/20/g, '')
+          .replace(/bg-emerald-50\/30/g, '')
+          .replace(/hover:bg-[^\s]+/g, '')
           .trim();
       }
-      // Clean duplicate literal bullet symbols (●, •, *, ■) from text lines
+      // Clean duplicate literal bullet symbols (●, •) only if standalone at start
       if (el.children.length === 0 && el.textContent) {
-        el.textContent = el.textContent.replace(/^[●•*■–—]\s*/u, '').trim();
+        el.textContent = el.textContent.replace(/^[●•]\s*/u, '').trim();
       }
     });
 
@@ -1194,6 +1276,44 @@ export default function ResumeEditorPage() {
               --tw-shadow: none !important;
               --tw-ring-offset-shadow: none !important;
             }
+            /* Two-column grid preservation in print engine */
+            .print-wrapper .grid {
+              display: grid !important;
+            }
+            .print-wrapper .grid-cols-12 {
+              display: grid !important;
+              grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+              gap: 1.25rem !important;
+            }
+            .print-wrapper .col-span-5 {
+              grid-column: span 5 / span 5 !important;
+              border-right: 1px solid #cbd5e1 !important;
+              padding-right: 1rem !important;
+            }
+            .print-wrapper .col-span-7 {
+              grid-column: span 7 / span 7 !important;
+              padding-left: 0.5rem !important;
+            }
+            .print-wrapper .flex {
+              display: flex !important;
+            }
+            .print-wrapper .flex-row {
+              flex-direction: row !important;
+            }
+            .print-wrapper .justify-between {
+              justify-content: space-between !important;
+            }
+            .print-wrapper .w-\[68\%\] {
+              width: 68% !important;
+            }
+            .print-wrapper .w-\[32\%\] {
+              width: 32% !important;
+            }
+            .print-wrapper .rounded-full {
+              border-radius: 9999px !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
             /* Executive Compact Formatting Rules */
             .print-wrapper [id^="doc-sec-"] {
               margin-bottom: 12px !important;
@@ -1202,28 +1322,27 @@ export default function ResumeEditorPage() {
               break-inside: avoid !important;
             }
             .print-wrapper h1 {
-              font-size: 24px !important;
+              font-size: 22px !important;
               line-height: 1.2 !important;
               margin-bottom: 2px !important;
             }
             .print-wrapper h2 {
               font-size: 11px !important;
-              letter-spacing: 0.08em !important;
-              margin-bottom: 6px !important;
-              padding-bottom: 2px !important;
+              letter-spacing: 0.05em !important;
+              margin-bottom: 4px !important;
             }
             .print-wrapper p, .print-wrapper li, .print-wrapper span {
-              font-size: 11px !important;
-              line-height: 1.45 !important;
+              font-size: 10.5px !important;
+              line-height: 1.4 !important;
             }
             .print-wrapper ul {
-              margin-top: 4px !important;
-              margin-bottom: 4px !important;
-              padding-left: 16px !important;
+              margin-top: 3px !important;
+              margin-bottom: 3px !important;
+              padding-left: 14px !important;
               list-style-type: disc !important;
             }
             .print-wrapper li {
-              margin-bottom: 3px !important;
+              margin-bottom: 2px !important;
               page-break-inside: avoid !important;
               break-inside: avoid !important;
               list-style-type: disc !important;
@@ -1377,40 +1496,30 @@ export default function ResumeEditorPage() {
                 <span>{saveError ? 'Sync issue' : isSaved ? 'Auto Saved' : 'Saving...'}</span>
               </span>
 
-              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-[11px] font-bold rounded-md">
-                ATS: 94/100
-              </span>
-
-              <span className="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[11px] font-bold rounded-md hidden lg:inline-block">
-                Match: 96%
-              </span>
-
-              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold rounded-md flex items-center gap-1">
-                <Sparkles size={11} className="text-blue-600" /> AI Ready
-              </span>
+              {liveAtsScore !== null && (
+                <button
+                  onClick={() => setIsAtsPanelExpanded(true)}
+                  className={`px-2 py-0.5 border font-mono text-[11px] font-bold rounded-md flex items-center gap-1 cursor-pointer transition-all ${
+                    isCalculatingAts
+                      ? 'bg-amber-50 text-amber-800 border-amber-200 animate-pulse'
+                      : liveAtsScore >= 80
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                      : liveAtsScore >= 60
+                      ? 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
+                      : liveAtsScore >= 40
+                      ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                      : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100'
+                  }`}
+                  title="Live ATS Score — Click to expand ATS Analysis panel"
+                >
+                  <span>{isCalculatingAts ? 'Updating ATS score...' : `ATS: ${liveAtsScore}/100`}</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setShowComparisonModal(true)}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#0B192C] border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <SlidersHorizontal size={14} className="text-blue-600" />
-              <span className="hidden sm:inline">Compare</span>
-            </button>
-
-            <button
-              onClick={handleApplyAllAIReal}
-              disabled={isAiWorking}
-              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-            >
-              <Sparkles size={14} className="text-blue-600" />
-              <span>{isAiWorking ? 'Thinking...' : 'Apply AI'}</span>
-            </button>
-
-            <div className="h-4 w-[1px] bg-slate-200" />
 
             <button
               onClick={handleExportPDF}
@@ -1562,7 +1671,7 @@ export default function ResumeEditorPage() {
                             isSelected ? 'text-blue-300' : isHidden ? 'text-slate-400' : 'text-slate-600'
                           }`}
                         />
-                        <span className={`font-bold truncate ${isHidden ? 'line-through opacity-75' : ''}`}>
+                        <span className={`font-bold truncate ${isHidden ? 'opacity-60' : ''}`}>
                           {item.title}
                         </span>
                         {isHidden && (
@@ -1611,17 +1720,7 @@ export default function ResumeEditorPage() {
                           <ChevronDown size={13} />
                         </button>
 
-                        <button
-                          onClick={(e) => handleToggleVisibility(item.id, e)}
-                          className={`p-1 rounded transition-colors ${
-                            isSelected
-                              ? 'hover:bg-slate-700 text-slate-200'
-                              : 'hover:bg-slate-200 text-slate-600'
-                          }`}
-                          title={isHidden ? 'Show section' : 'Hide section'}
-                        >
-                          {isHidden ? <EyeOff size={13} className="text-amber-500" /> : <Eye size={13} />}
-                        </button>
+
 
                         <button
                           onClick={(e) => handleDuplicateSection(item.id, e)}
@@ -1679,7 +1778,11 @@ export default function ResumeEditorPage() {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setResumeType('fresher')}
+                        onClick={() => {
+                          setResumeType('fresher');
+                          setSections(FRESHER_DEFAULT_RESUME.sectionsOrder || getDefaultSectionItems('fresher'));
+                          showToast('Switched to Fresher layout format!');
+                        }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
                           resumeType === 'fresher'
                             ? 'bg-[#0B192C] border-[#0B192C] text-white'
@@ -1690,7 +1793,11 @@ export default function ResumeEditorPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setResumeType('experienced')}
+                        onClick={() => {
+                          setResumeType('experienced');
+                          setSections(getDefaultSectionItems('experienced'));
+                          showToast('Switched to Experienced layout format!');
+                        }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
                           resumeType === 'experienced'
                             ? 'bg-[#0B192C] border-[#0B192C] text-white'
@@ -1700,8 +1807,61 @@ export default function ResumeEditorPage() {
                         Experienced Professional
                       </button>
                     </div>
+                    {resumeType === 'fresher' && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-100">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          Fresher Layout Arrangement
+                        </label>
+                        <div className="flex gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFresherLayoutMode('auto');
+                              showToast('Auto mode: switches to 1-column for large resumes!');
+                            }}
+                            className={`px-2.5 py-1 rounded text-[11px] font-medium border cursor-pointer ${
+                              fresherLayoutMode === 'auto'
+                                ? 'bg-blue-600 border-blue-600 text-white font-bold'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            Auto (Smart)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFresherLayoutMode('1-column');
+                              showToast('Full-width stacked layout selected!');
+                            }}
+                            className={`px-2.5 py-1 rounded text-[11px] font-medium border cursor-pointer ${
+                              fresherLayoutMode === '1-column'
+                                ? 'bg-blue-600 border-blue-600 text-white font-bold'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            1-Column Stacked (Large Resume)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFresherLayoutMode('2-column');
+                              showToast('2-column side-by-side layout selected!');
+                            }}
+                            className={`px-2.5 py-1 rounded text-[11px] font-medium border cursor-pointer ${
+                              fresherLayoutMode === '2-column'
+                                ? 'bg-blue-600 border-blue-600 text-white font-bold'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            2-Column Side-by-Side
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <p className="text-[10px] text-slate-400 mt-1">
-                      Changes the default order of sections in the navigator on the left. You can still reorder, hide, or add sections manually at any time.
+                      {resumeType === 'fresher'
+                        ? 'Best for students and candidates with limited professional experience.'
+                        : 'Best for candidates with professional work experience.'}
                     </p>
                   </div>
 
@@ -1774,40 +1934,30 @@ export default function ResumeEditorPage() {
                     </div>
                   </div>
 
-                  {/* Contextual AI Toolbar for Personal Info */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
-                    <button
-                      onClick={handleRefineJobTitleWithAI}
-                      disabled={isAiWorking || !personalInfo.jobTitle}
-                      className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-                    >
-                      <Sparkles size={13} className="text-blue-600" />
-                      <span>Refine Title for ATS</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!currentUser) {
-                          showToast('Sign in to auto-fill from your account profile.');
-                          return;
-                        }
-                        setPersonalInfo((prev) => ({
-                          ...prev,
-                          fullName: currentUser.full_name || currentUser.name || prev.fullName,
-                          email: currentUser.email || prev.email,
-                          phone: currentUser.phone || prev.phone,
-                          location: currentUser.location || prev.location,
-                          website: currentUser.website || prev.website,
-                          github: currentUser.github || prev.github,
-                          linkedin: currentUser.linkedin || prev.linkedin,
-                        }));
-                        showToast('Auto-filled contact details from your account profile!');
-                      }}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <User size={13} />
-                      <span>Auto-fill from Profile</span>
-                    </button>
-                  </div>
+                  {/* Auto-fill from Profile — only shown to logged-in users with real profile data */}
+                  {currentUser && (
+                    <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => {
+                          setPersonalInfo((prev) => ({
+                            ...prev,
+                            fullName: currentUser.full_name || currentUser.name || prev.fullName,
+                            email: currentUser.email || prev.email,
+                            phone: currentUser.phone || prev.phone,
+                            location: currentUser.location || prev.location,
+                            website: currentUser.website || prev.website,
+                            github: currentUser.github || prev.github,
+                            linkedin: currentUser.linkedin || prev.linkedin,
+                          }));
+                          showToast('Auto-filled contact details from your account profile!');
+                        }}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <User size={13} />
+                        <span>Auto-fill from Profile</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1859,11 +2009,11 @@ export default function ResumeEditorPage() {
                       onClick={() => {
                         const newExp: ExperienceItem = {
                           id: `exp_${Date.now()}`,
-                          title: 'Senior Software Engineer',
-                          company: 'Tech Corp',
-                          period: '2021 - 2023',
-                          location: 'Remote',
-                          bullets: ['Architected scalable React & Node.js frontend architecture.'],
+                          title: '',
+                          company: '',
+                          period: '',
+                          location: '',
+                          bullets: [''],
                         };
                         setExperiences([...experiences, newExp]);
                       }}
@@ -1873,19 +2023,19 @@ export default function ResumeEditorPage() {
                     </button>
                   </div>
 
-                  {/* Integrated Contextual AI Actions */}
-                  <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg flex items-center justify-between gap-2 flex-wrap">
+                  {/* Optional AI Enhancement */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
-                      <Sparkles size={14} className="text-blue-600" />
-                      <span className="font-bold text-blue-900 text-xs">AI Experience Enhancers</span>
+                      <Sparkles size={14} className="text-slate-500" />
+                      <span className="text-xs text-slate-700 font-bold">Enhance with AI <span className="font-normal text-slate-500">(optional)</span></span>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={handleEnhanceExperienceWithAI}
                         disabled={isAiWorking}
-                        className="px-2.5 py-1 bg-white hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed text-blue-700 border border-blue-300 rounded text-xs font-bold cursor-pointer transition-colors"
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed text-slate-700 border border-slate-300 rounded text-xs font-bold cursor-pointer transition-colors"
                       >
-                        {isAiWorking ? 'Thinking...' : '+ Add Quantified STAR Metrics'}
+                        {isAiWorking ? 'Thinking...' : 'Improve Experience Bullets'}
                       </button>
                     </div>
                   </div>
@@ -1959,10 +2109,10 @@ export default function ResumeEditorPage() {
                       onClick={() => {
                         const newProj: ProjectItem = {
                           id: `proj_${Date.now()}`,
-                          title: 'Open Source React Tool',
-                          description: 'Developer library for reactive state management.',
-                          techStack: ['TypeScript', 'React'],
-                          bullets: ['Engineered modular architecture with 100% test coverage.'],
+                          title: '',
+                          description: '',
+                          techStack: [],
+                          bullets: [''],
                         };
                         setProjects([...projects, newProj]);
                       }}
@@ -2203,9 +2353,9 @@ export default function ResumeEditorPage() {
                       onClick={() => {
                         const newEdu: EducationItem = {
                           id: `edu_${Date.now()}`,
-                          degree: 'B.S. Computer Science',
-                          institution: 'University of California',
-                          period: '2016 - 2020',
+                          degree: '',
+                          institution: '',
+                          period: '',
                         };
                         setEducation([...education, newEdu]);
                       }}
@@ -2377,7 +2527,7 @@ export default function ResumeEditorPage() {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        ATS Template Preset (100% Single-Column, Table-Free)
+                        Resume Layout Template
                       </label>
                       <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                         {templatesConfigService.getAllTemplates().length} Templates Configured
@@ -2591,103 +2741,176 @@ export default function ResumeEditorPage() {
               );
             })()}
 
-            {/* EXPANDABLE ATS ANALYSIS PANEL (BELOW ACTIVE EDITOR) */}
-            <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-3">
-              <div
+            {/* ATS ANALYSIS PANEL — LIVE DETERMINISTIC ATS SCORE & CHECKLIST */}
+            <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs">
+              <button
                 onClick={() => setIsAtsPanelExpanded(!isAtsPanelExpanded)}
-                className="flex items-center justify-between cursor-pointer select-none"
+                className="flex items-center justify-between w-full text-left select-none cursor-pointer"
               >
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-xs">
-                    94
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-8 h-8 rounded-lg border flex items-center justify-center font-bold font-mono text-xs transition-colors ${
+                    isCalculatingAts
+                      ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
+                      : liveAtsScore !== null && liveAtsScore >= 80
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : liveAtsScore !== null && liveAtsScore >= 60
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : liveAtsScore !== null && liveAtsScore >= 40
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-red-50 text-red-700 border-red-200'
+                  }`}>
+                    {isCalculatingAts ? '...' : liveAtsScore !== null ? liveAtsScore : '--'}
                   </div>
                   <div>
-                    <h3 className="font-bold text-xs text-[#0B192C]">ATS Analysis & Optimization</h3>
-                    <p className="text-[10px] text-slate-500">Target Alignment: 96% Match</p>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-xs text-[#0B192C]">ATS Analysis</h3>
+                      {liveAtsScore !== null && !isCalculatingAts && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded font-mono ${
+                          liveAtsScore >= 80 ? 'bg-emerald-100 text-emerald-800' :
+                          liveAtsScore >= 60 ? 'bg-blue-100 text-blue-800' :
+                          liveAtsScore >= 40 ? 'bg-amber-100 text-amber-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {atsReport?.scoreLabel || 'Score'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                      {isCalculatingAts ? (
+                        <span className="text-amber-600 font-medium">Updating ATS score...</span>
+                      ) : (
+                        <span>{atsLastUpdatedText}</span>
+                      )}
+                    </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    +18 ATS Gain Available
-                  </span>
                   {isAtsPanelExpanded ? (
-                    <ChevronUp size={16} className="text-slate-400" />
+                    <ChevronUp size={16} className="text-slate-400 shrink-0" />
                   ) : (
-                    <ChevronDown size={16} className="text-slate-400" />
+                    <ChevronDown size={16} className="text-slate-400 shrink-0" />
                   )}
                 </div>
-              </div>
+              </button>
 
-              {/* Collapsible Content */}
               {isAtsPanelExpanded && (
-                <div className="pt-3 border-t border-slate-100 space-y-3 text-xs animate-in fade-in duration-200">
-                  {/* Score Progress Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-medium">
-                      <span className="text-slate-600">Overall ATS Health</span>
-                      <span className="font-bold text-emerald-600 font-mono">94 / 100</span>
+                <div className="pt-3 border-t border-slate-100 mt-3 space-y-3.5 text-xs animate-in fade-in duration-200">
+                  {/* Live Score Progress Bar */}
+                  <div className="space-y-1.5 p-3 bg-slate-50 border border-slate-200/80 rounded-lg">
+                    <div className="flex justify-between items-center text-[11px] font-medium">
+                      <span className="text-slate-700 font-bold">Overall ATS Health</span>
+                      <span className="font-bold font-mono text-xs">
+                        {isCalculatingAts ? (
+                          <span className="text-amber-600 animate-pulse">Calculating...</span>
+                        ) : liveAtsScore !== null ? (
+                          <span className={
+                            liveAtsScore >= 80 ? 'text-emerald-700' :
+                            liveAtsScore >= 60 ? 'text-blue-700' :
+                            liveAtsScore >= 40 ? 'text-amber-700' : 'text-red-700'
+                          }>
+                            {liveAtsScore} / 100
+                          </span>
+                        ) : (
+                          '--'
+                        )}
+                      </span>
                     </div>
-                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full w-[94%]" />
-                    </div>
-                  </div>
-
-                  {/* Missing Keywords */}
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
-                      MISSING KEYWORDS FOR TARGET ROLE
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {['Docker', 'Redis', 'AWS', 'CI/CD', 'Jest'].map((kw) => (
-                        <button
-                          key={kw}
-                          onClick={() => {
-                            if (!skills.includes(kw)) {
-                              setSkills((prev) => `${prev}, ${kw}`);
-                              showToast(`Added ${kw} to Skills!`);
-                            }
-                          }}
-                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-semibold rounded flex items-center gap-1 cursor-pointer"
-                        >
-                          <span>+ {kw}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Priority AI Recommendations */}
-                  <div className="space-y-2 pt-1">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                      AI RECOMMENDATIONS
-                    </span>
-                    {coachSuggestions.map((sug) => (
+                    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
                       <div
-                        key={sug.id}
-                        className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2 hover:border-blue-400 transition-colors"
-                      >
-                        <div>
-                          <span className="font-bold text-xs text-[#0B192C]">{sug.title}</span>
-                          <p className="text-[11px] text-slate-500">{sug.description}</p>
-                        </div>
-                        <button
-                          onClick={sug.apply}
-                          className="px-2.5 py-1 bg-white hover:bg-[#0B192C] text-[#0B192C] hover:text-white border border-slate-200 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0"
-                        >
-                          +{sug.atsGain} ATS
-                        </button>
-                      </div>
-                    ))}
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          isCalculatingAts ? 'bg-amber-400 animate-pulse w-full' :
+                          (liveAtsScore || 0) >= 80 ? 'bg-emerald-500' :
+                          (liveAtsScore || 0) >= 60 ? 'bg-blue-500' :
+                          (liveAtsScore || 0) >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                        }`}
+                        style={{ width: isCalculatingAts ? '100%' : `${liveAtsScore || 0}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                      <span>{jdText?.trim() ? 'Evaluated against Target Job Description' : 'General ATS Readability Scoring'}</span>
+                      <span>{isCalculatingAts ? 'Updating ATS score...' : atsLastUpdatedText}</span>
+                    </div>
                   </div>
 
-                  {/* One-click Apply All */}
-                  <button
-                    onClick={handleApplyAllAIReal}
-                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                  >
-                    <Sparkles size={14} />
-                    <span>Apply All AI Recommendations</span>
-                  </button>
+                  {/* Real Top Rule Fixes / Critical Improvements */}
+                  {atsReport && atsReport.topFixes && atsReport.topFixes.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                        ATS READABILITY CHECKLIST ({atsReport.topFixes.length} KEY AREAS)
+                      </span>
+                      <div className="space-y-1.5">
+                        {atsReport.topFixes.map((fix) => (
+                          <div
+                            key={fix.key}
+                            className="p-2.5 bg-slate-50 border border-slate-200/90 rounded-lg flex items-start justify-between gap-2 text-xs"
+                          >
+                            <div className="space-y-0.5 flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                  fix.score >= 80 ? 'bg-emerald-500' :
+                                  fix.score >= 60 ? 'bg-blue-500' :
+                                  fix.score >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                                }`} />
+                                <span className="font-bold text-[#0B192C] text-[11px] truncate">{fix.label}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 leading-tight">{fix.reason}</p>
+                              {fix.fixSuggestion && (
+                                <p className="text-[10px] text-blue-700 font-medium pt-0.5">💡 {fix.fixSuggestion}</p>
+                              )}
+                            </div>
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-700 shrink-0">
+                              {fix.score}/100
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Missing Keywords from Job Description (if JD is provided) */}
+                  {atsReport && atsReport.missingKeywords && atsReport.missingKeywords.length > 0 && (
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                        MISSING FROM RESUME (FOUND IN TARGET JD)
+                      </span>
+                      <p className="text-[10px] text-slate-500">
+                        Found in Job Description but not detected in your resume:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {atsReport.missingKeywords.slice(0, 10).map((item) => {
+                          const kw = typeof item === 'string' ? item : item.keyword;
+                          return (
+                            <button
+                              key={kw}
+                              onClick={() => {
+                                if (!skills.toLowerCase().includes(kw.toLowerCase())) {
+                                  setSkills((prev) => (prev ? `${prev}, ${kw}` : kw));
+                                  showToast(`Added "${kw}" to Skills section!`);
+                                }
+                              }}
+                              className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-semibold rounded flex items-center gap-1 cursor-pointer transition-colors"
+                              title={`Found in Job Description but missing from your resume. Click to review/add.`}
+                            >
+                              <span>+ {kw}</span>
+                              <span className="text-[9px] font-mono text-amber-700">(Review)</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Button to full ATS Analysis Page */}
+                  <div className="pt-1">
+                    <button
+                      onClick={() => navigate('/app/ats-analysis')}
+                      className="w-full py-2 bg-[#0B192C] hover:bg-slate-800 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                    >
+                      <FileCheck size={14} />
+                      <span>View Full Detailed ATS Report</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -2983,361 +3206,40 @@ export default function ResumeEditorPage() {
                   }}
                   className="w-full max-w-[794px] bg-white border border-slate-200 shadow-xl rounded-xs p-8 sm:p-12 transition-all duration-300 text-slate-800"
                 >
-                  {sections.map((sec) => {
-                    if (!sec.visible) return null;
-
-                    if (sec.type === 'personal') {
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`pb-5 mb-5 border-b border-slate-200 cursor-pointer transition-all rounded-lg p-2 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h1
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-2xl sm:text-3xl font-black tracking-tight"
-                          >
-                            {displayPersonalInfo.fullName || 'bhavesh'}
-                          </h1>
-                          <p className="text-sm font-bold text-blue-600 mt-0.5">
-                            {displayPersonalInfo.jobTitle || 'Senior Frontend Engineer'}
-                          </p>
-
-                          <div className="flex items-center gap-3 flex-wrap text-xs text-slate-600 mt-2">
-                            {displayPersonalInfo.email && <span>{displayPersonalInfo.email}</span>}
-                            {displayPersonalInfo.phone && <span>• {displayPersonalInfo.phone}</span>}
-                            {displayPersonalInfo.location && <span>• {displayPersonalInfo.location}</span>}
-                          </div>
-                          <div className="flex items-center gap-3 flex-wrap text-xs text-slate-600 mt-1">
-                            {displayPersonalInfo.linkedin && <span>{displayPersonalInfo.linkedin.replace(/^https?:\/\//, '')}</span>}
-                            {displayPersonalInfo.github && <span>{displayPersonalInfo.linkedin ? '• ' : ''}github.com/{displayPersonalInfo.github.replace(/.*github\.com\//, '')}</span>}
-                            {displayPersonalInfo.website && <span>{(displayPersonalInfo.linkedin || displayPersonalInfo.github) ? '• ' : ''}{displayPersonalInfo.website.replace(/^https?:\/\//, '')}</span>}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    if (sec.type === 'summary' && displayPersonalInfo.summary) {
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : aiHighlightedSection === 'summary'
-                              ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h2
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
-                          >
-                            {sec.title.toUpperCase()}
-                          </h2>
-                          <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-sans">
-                            {displayPersonalInfo.summary}
-                          </p>
-                        </div>
-                      );
-                    }
-
-                    if (sec.type === 'experience' && displayExperiences.length > 0) {
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : aiHighlightedSection === 'experience'
-                              ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h2
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-xs font-mono font-bold tracking-widest uppercase mb-3 border-b border-slate-100 pb-1"
-                          >
-                            {sec.title.toUpperCase()}
-                          </h2>
-
-                          <div className="space-y-4">
-                            {displayExperiences.map((exp) => (
-                              <div key={exp.id} className="space-y-1.5">
-                                <div className="flex items-start justify-between">
-                                  <div>
-                                    <h3 className="font-bold text-sm text-[#0B192C]">{exp.title}</h3>
-                                    <span className="text-xs font-semibold text-blue-700">{exp.company}</span>
-                                  </div>
-                                  <span className="text-xs font-mono font-medium text-slate-500">{exp.period}</span>
-                                </div>
-                                <ul className="list-disc list-inside space-y-1 text-xs text-slate-700 leading-relaxed pl-1">
-                                  {(exp.bullets || []).map((b, i) => (
-                                    <li key={i}>{b}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    if (sec.type === 'projects' && displayProjects.length > 0) {
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : aiHighlightedSection === 'projects'
-                              ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h2
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-xs font-mono font-bold tracking-widest uppercase mb-3 border-b border-slate-100 pb-1"
-                          >
-                            {sec.title.toUpperCase()}
-                          </h2>
-
-                          <div className="space-y-3">
-                            {displayProjects.map((proj) => {
-                              const techList = (proj.techStack || []).filter(
-                                (tech) => tech && tech.trim() && tech.toLowerCase() !== 'unknown'
-                              );
-                              return (
-                                <div key={proj.id} className="space-y-1">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <h3 className="font-bold text-xs sm:text-sm text-[#0B192C]">{proj.title}</h3>
-                                    {(proj.link || proj.demoUrl) && (
-                                      <span className="text-[10px] font-semibold text-blue-700 whitespace-nowrap shrink-0">
-                                        {proj.link && (
-                                          <a
-                                            href={proj.link}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="hover:underline"
-                                          >
-                                            GitHub
-                                          </a>
-                                        )}
-                                        {proj.link && proj.demoUrl && <span className="text-slate-400"> {'|'} </span>}
-                                        {proj.demoUrl && (
-                                          <a
-                                            href={proj.demoUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="hover:underline"
-                                          >
-                                            Live
-                                          </a>
-                                        )}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {proj.description && <p className="text-xs text-slate-600">{proj.description}</p>}
-                                  {proj.bullets && proj.bullets.length > 0 && (
-                                    <ul className="list-disc list-inside space-y-0.5 text-xs text-slate-700 pl-1">
-                                      {proj.bullets.map((b, bIdx) => (
-                                        <li key={bIdx}>{b}</li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                  {techList.length > 0 && (
-                                    <p className="text-[11px] text-slate-500">
-                                      <span className="font-semibold">Tech:</span> {techList.join(', ')}
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    if (sec.type === 'skills' && displaySkills) {
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : aiHighlightedSection === 'skills'
-                              ? 'ring-2 ring-emerald-500 bg-emerald-50/30'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h2
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
-                          >
-                            {sec.title.toUpperCase()}
-                          </h2>
-                          <p className="text-xs font-mono text-slate-700 leading-relaxed bg-slate-50 p-3 rounded border border-slate-100">
-                            {displaySkills}
-                          </p>
-                        </div>
-                      );
-                    }
-
-                    if (sec.type === 'education' && displayEducation.length > 0) {
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h2
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
-                          >
-                            {sec.title.toUpperCase()}
-                          </h2>
-                          {displayEducation.map((edu) => (
-                            <div key={edu.id} className="flex items-start justify-between text-xs mb-2 last:mb-0">
-                              <div>
-                                <h3 className="font-bold text-[#0B192C]">{edu.degree}</h3>
-                                <p className="text-slate-600 font-medium">{edu.institution}</p>
-                              </div>
-                              <span className="font-mono text-slate-500">{edu.period}</span>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    }
-
-                    if (sec.type === 'certificates' && displayCertificates.length > 0) {
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h2
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
-                          >
-                            {sec.title.toUpperCase()}
-                          </h2>
-                          {displayCertificates.map((c) => (
-                            <div key={c.id} className="flex items-center justify-between text-xs mb-1 last:mb-0">
-                              <span className="font-bold text-[#0B192C]">{c.title} — {c.issuer}</span>
-                              <span className="font-mono text-slate-500">{c.date}</span>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    }
-
-                    if (sec.type === 'achievements' && displayAchievements.length > 0) {
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h2
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-xs font-mono font-bold tracking-widest uppercase mb-2 border-b border-slate-100 pb-1"
-                          >
-                            {sec.title.toUpperCase()}
-                          </h2>
-                          <ul className="list-disc list-inside space-y-0.5">
-                            {displayAchievements.map((a) => (
-                              <li key={a.id} className="text-xs text-slate-700">
-                                <span className="font-bold text-[#0B192C]">{a.title}</span>
-                                {a.description ? ` — ${a.description}` : ''}
-                                {a.date ? <span className="font-mono text-slate-500"> ({a.date})</span> : null}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    }
-
-                    if (sec.type === 'custom') {
-                      const customData = customSections.find((c) => c.id === sec.id);
-                      if (!customData || customData.items.length === 0) return null;
-                      return (
-                        <div
-                          key={sec.id}
-                          id={`doc-sec-${sec.id}`}
-                          onClick={() => handleSelectSection(sec.id)}
-                          className={`mb-6 cursor-pointer transition-all rounded-lg p-2.5 ${
-                            activeSection === sec.id
-                              ? 'ring-2 ring-blue-500/50 bg-blue-50/20'
-                              : 'hover:bg-slate-50/60'
-                          }`}
-                        >
-                          <h2
-                            style={{ color: resumeStyling.primaryColor }}
-                            className="text-xs font-mono font-bold tracking-widest uppercase mb-3 border-b border-slate-100 pb-1"
-                          >
-                            {customData.title.toUpperCase()}
-                          </h2>
-                          <div className="space-y-3">
-                            {customData.items.map((item) => (
-                              <div key={item.id} className="space-y-1">
-                                <div className="flex items-start justify-between text-xs">
-                                  <div>
-                                    <h3 className="font-bold text-[#0B192C]">{item.title}</h3>
-                                    {item.subtitle && (
-                                      <span className="text-xs font-semibold text-blue-700">{item.subtitle}</span>
-                                    )}
-                                  </div>
-                                  {item.date && (
-                                    <span className="font-mono text-slate-500 text-[11px]">{item.date}</span>
-                                  )}
-                                </div>
-                                {item.bullets && item.bullets.length > 0 && (
-                                  <ul className="list-disc list-inside space-y-0.5 text-xs text-slate-700 leading-relaxed pl-1">
-                                    {item.bullets.filter(Boolean).map((b, bIdx) => (
-                                      <li key={bIdx}>{b}</li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return null;
-                  })}
+                  {resumeType === 'fresher' ? (
+                    <FresherDocumentView
+                      displayPersonalInfo={displayPersonalInfo}
+                      displayExperiences={displayExperiences}
+                      displayEducation={displayEducation}
+                      displaySkills={displaySkills}
+                      displayProjects={displayProjects}
+                      displayCertificates={displayCertificates}
+                      displayAchievements={displayAchievements}
+                      customSections={customSections}
+                      sections={sections}
+                      activeSection={activeSection}
+                      aiHighlightedSection={aiHighlightedSection}
+                      handleSelectSection={handleSelectSection}
+                      primaryColor={resumeStyling.primaryColor || '#000000'}
+                      forceLayoutMode={fresherLayoutMode}
+                    />
+                  ) : (
+                    <ExperiencedDocumentView
+                      displayPersonalInfo={displayPersonalInfo}
+                      displayExperiences={displayExperiences}
+                      displayEducation={displayEducation}
+                      displaySkills={displaySkills}
+                      displayProjects={displayProjects}
+                      displayCertificates={displayCertificates}
+                      displayAchievements={displayAchievements}
+                      customSections={customSections}
+                      sections={sections}
+                      activeSection={activeSection}
+                      aiHighlightedSection={aiHighlightedSection}
+                      handleSelectSection={handleSelectSection}
+                      primaryColor={resumeStyling.primaryColor || '#000000'}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -3434,7 +3336,7 @@ export default function ResumeEditorPage() {
         isOpen={isGithubModalOpen}
         onClose={() => setIsGithubModalOpen(false)}
         mode={githubImportMode}
-        username="alexkumar-dev"
+        username={currentUser?.github?.replace(/^https?:\/\/(www\.)?github\.com\//, '') || ''}
         currentSkillsString={skills}
         targetJobDescription=""
         onImportSkills={handleImportSkillsFromGithub}

@@ -233,6 +233,53 @@ export default function ResumeTemplateRenderer({ layout, variant, data }: Props)
     }
   };
 
+  if (data.resumeType === 'fresher') {
+    return (
+      <div
+        className="bg-white w-full h-full p-4 overflow-hidden text-left"
+        style={{ fontFamily: layout.fontFamily }}
+      >
+        {/* Header */}
+        <div className="flex justify-between pb-2 mb-2 border-b-2 border-slate-900">
+          <div className="w-[66%] space-y-0.5">
+            <h1 className="font-black text-[13px] tracking-tight uppercase" style={{ color: layout.primaryColor }}>
+              {data.fullName}
+            </h1>
+            <p className="text-[8.5px] font-bold uppercase text-slate-800 tracking-wider">
+              {data.jobTitle}
+            </p>
+            {data.summary && (
+              <p className="text-[7.5px] text-slate-700 leading-tight mt-1 line-clamp-3">
+                {data.summary}
+              </p>
+            )}
+          </div>
+          <div className="w-[32%] pl-2 border-l border-slate-300 text-[7.5px] text-slate-700 space-y-0.5">
+            {data.phone && <div className="truncate">{data.phone}</div>}
+            {data.email && <div className="truncate">{data.email}</div>}
+            {data.linkedin && <div className="truncate">{data.linkedin.replace(/^https?:\/\//, '')}</div>}
+            {data.github && <div className="truncate">{data.github.replace(/^https?:\/\//, '')}</div>}
+            {data.location && <div className="truncate">{data.location}</div>}
+          </div>
+        </div>
+
+        {/* Two column layout */}
+        <div className="grid grid-cols-12 gap-2 text-left">
+          <div className="col-span-5 border-r border-slate-200 pr-2 space-y-2">
+            {renderSection('skills')}
+            {renderSection('education')}
+            {renderSection('achievements')}
+          </div>
+          <div className="col-span-7 space-y-2">
+            {renderSection('projects')}
+            {renderSection('certificates')}
+            {renderSection('experience')}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="bg-white w-full h-full p-4 overflow-hidden"

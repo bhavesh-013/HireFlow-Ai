@@ -13,8 +13,6 @@ import {
   Zap,
   Trash2,
   Copy,
-  Layout,
-  Search,
   Check,
   RefreshCw,
   Clock,
@@ -27,7 +25,6 @@ import {
 import {
   mockUploadHistory,
   mockLinkedInProfileData,
-  mockTemplates,
   mockResumes,
 } from '../data/mockData';
 import { getStoredUser } from '../lib/api';
@@ -37,9 +34,8 @@ import ResumeEditorPage from './ResumeEditorPage';
 import { getDefaultSectionItems, suggestResumeType } from '../services/section.reorder';
 import { parseResumeFile } from '../utils/fileParser';
 import { parseResumeText } from '../utils/resumeTextParser';
-import TemplateCard from '../components/templates/TemplateCard';
-import { getPreviewResumeData } from '../components/templates/previewData';
-import { templateFavoritesService } from '../services/templateFavorites.service';
+import { FRESHER_DEFAULT_RESUME } from '../data/defaultFresherResume';
+import { EXPERIENCED_DEFAULT_RESUME } from '../data/defaultExperiencedResume';
 
 export default function ResumeBuilderPage() {
   const navigate = useNavigate();
@@ -80,7 +76,7 @@ export default function ResumeBuilderPage() {
 
   // Active Creation Tab Mode
   const [activeTab, setActiveTab] = useState<
-    'scratch' | 'upload' | 'github' | 'linkedin' | 'templates'
+    'scratch' | 'upload' | 'github' | 'linkedin'
   >('upload');
 
   // Common Processing Modal State
@@ -113,15 +109,6 @@ export default function ResumeBuilderPage() {
   // ----------------------------------------------------
   const [linkedInFile, setLinkedInFile] = useState<File | null>(null);
   const [linkedInDragActive, setLinkedInDragActive] = useState(false);
-
-  // ----------------------------------------------------
-  // Option 5: Browse Templates State
-  // ----------------------------------------------------
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [templateSearch, setTemplateSearch] = useState('');
-  const [templatePreviewData] = useState(() => getPreviewResumeData());
-  const [favoriteTemplateIds, setFavoriteTemplateIds] = useState<string[]>(() => templateFavoritesService.getFavoriteIds());
-  const [previewTemplateId, setPreviewTemplateId] = useState<string | null>(null);
 
   // Helper function: Simulate Processing & Redirect to Editor
   const runImportProcess = (
@@ -167,30 +154,26 @@ export default function ResumeBuilderPage() {
   // ----------------------------------------------------
   const handleStartScratch = (e: React.FormEvent) => {
     e.preventDefault();
-    const blankResume: ParsedResumeData = {
-      title: `${scratchTitle || 'Untitled Resume'}.pdf`,
-      targetRole: scratchTargetRole,
-      templateName: 'Minimal Technical',
-      importSource: 'scratch',
-      resumeType,
-      sectionsOrder: getDefaultSectionItems(resumeType),
-      personalInfo: {
-        fullName: currentUser?.full_name || currentUser?.name || '',
-        jobTitle: scratchTargetRole,
-        email: currentUser?.email || '',
-        phone: currentUser?.phone || '',
-        location: currentUser?.location || '',
-        website: currentUser?.website || '',
-        github: currentUser?.github || '',
-        linkedin: currentUser?.linkedin || '',
-        summary: '',
-      },
-      experiences: [],
-      education: [],
-      skills: '',
-      projects: [],
-      certificates: [],
-    };
+    const isFresher = resumeType === 'fresher';
+    const blankResume: ParsedResumeData = isFresher
+      ? {
+          ...FRESHER_DEFAULT_RESUME,
+          title: `${scratchTitle || FRESHER_DEFAULT_RESUME.personalInfo.fullName}.pdf`,
+          targetRole: scratchTargetRole || FRESHER_DEFAULT_RESUME.targetRole,
+          personalInfo: {
+            ...FRESHER_DEFAULT_RESUME.personalInfo,
+            jobTitle: scratchTargetRole || FRESHER_DEFAULT_RESUME.personalInfo.jobTitle,
+          },
+        }
+      : {
+          ...EXPERIENCED_DEFAULT_RESUME,
+          title: `${scratchTitle || EXPERIENCED_DEFAULT_RESUME.personalInfo.fullName}.pdf`,
+          targetRole: scratchTargetRole || EXPERIENCED_DEFAULT_RESUME.targetRole,
+          personalInfo: {
+            ...EXPERIENCED_DEFAULT_RESUME.personalInfo,
+            jobTitle: scratchTargetRole || EXPERIENCED_DEFAULT_RESUME.personalInfo.jobTitle,
+          },
+        };
 
     runImportProcess(
       'Initializing Fresh Resume Workspace',
@@ -443,26 +426,7 @@ export default function ResumeBuilderPage() {
     );
   };
 
-  // ----------------------------------------------------
-  // Handler: Browse Templates — reuses the exact same flow as the
-  // dedicated Templates page (/app/templates): apply the template via
-  // ?template=<id> and let the Editor's own effect load it, keeping any
-  // real resume data the user already has instead of fabricating one.
-  // ----------------------------------------------------
-  const handleSelectTemplate = (templateId: string) => {
-    navigate(`/app/builder?template=${templateId}`);
-  };
 
-  const filteredTemplates = mockTemplates.filter((tmpl) => {
-    const matchesCat =
-      selectedCategory === 'All' ||
-      tmpl.tags?.some((t) => t.toLowerCase() === selectedCategory.toLowerCase()) ||
-      tmpl.resumeType?.some((rt) => rt.toLowerCase() === selectedCategory.toLowerCase());
-    const matchesSearch =
-      tmpl.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
-      tmpl.description.toLowerCase().includes(templateSearch.toLowerCase());
-    return matchesCat && matchesSearch;
-  });
 
   // State 2: a resume exists (loaded by id, or just created) — show the editor,
   // still on the same /app/builder route. No navigation, only conditional rendering.
@@ -522,8 +486,8 @@ export default function ResumeBuilderPage() {
         </p>
       </div>
 
-      {/* 5 Options Navigation Cards Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* 4 Options Navigation Cards Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
         {/* Tab 1: Start From Scratch */}
         <button
           onClick={() => setActiveTab('scratch')}
@@ -644,37 +608,6 @@ export default function ResumeBuilderPage() {
               }`}
             >
               Extract LinkedIn profile
-            </p>
-          </div>
-        </button>
-
-        {/* Tab 5: Browse Templates */}
-        <button
-          onClick={() => setActiveTab('templates')}
-          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
-            activeTab === 'templates'
-              ? 'bg-[#0B192C] border-[#0B192C] text-white shadow-md'
-              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
-                activeTab === 'templates' ? 'bg-amber-500/30 text-amber-300' : 'bg-amber-50 text-amber-600'
-              }`}
-            >
-              <Layout size={20} />
-            </div>
-            {activeTab === 'templates' && <CheckCircle2 size={16} className="text-blue-400" />}
-          </div>
-          <div>
-            <h3 className="font-bold text-sm leading-snug">5. Browse Templates</h3>
-            <p
-              className={`text-[11px] mt-0.5 line-clamp-1 ${
-                activeTab === 'templates' ? 'text-slate-300' : 'text-slate-500'
-              }`}
-            >
-              Pick from ATS designs
             </p>
           </div>
         </button>
@@ -988,58 +921,7 @@ export default function ResumeBuilderPage() {
         </div>
       )}
 
-      {/* ------------------------------------------------------------------- */}
-      {/* SECTION VIEW 5: BROWSE TEMPLATES */}
-      {/* ------------------------------------------------------------------- */}
-      {activeTab === 'templates' && (
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            {/* Category Filter Pills */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 custom-scrollbar">
-              {['All', 'ATS', 'Fresher', 'Experienced', 'Tech', 'Minimal', 'Professional'].map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                    selectedCategory === cat
-                      ? 'bg-[#0B192C] text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
 
-            {/* Template Search Box */}
-            <div className="relative shrink-0">
-              <input
-                type="text"
-                value={templateSearch}
-                onChange={(e) => setTemplateSearch(e.target.value)}
-                placeholder="Search templates..."
-                className="bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs text-[#0B192C] focus:outline-none focus:border-[#0B192C]"
-              />
-              <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
-            </div>
-          </div>
-
-          {/* Templates Grid — real, rendered previews (same cards as /app/templates) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredTemplates.map((tmpl) => (
-              <TemplateCard
-                key={tmpl.id}
-                template={tmpl}
-                data={templatePreviewData}
-                isFavorite={favoriteTemplateIds.includes(tmpl.id)}
-                onToggleFavorite={() => setFavoriteTemplateIds(templateFavoritesService.toggleFavorite(tmpl.id))}
-                onPreview={() => handleSelectTemplate(tmpl.id)}
-                onUse={() => handleSelectTemplate(tmpl.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

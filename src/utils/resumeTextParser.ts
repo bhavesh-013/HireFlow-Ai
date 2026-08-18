@@ -149,7 +149,7 @@ export function groupProjectLines(rawLines: string[]): ProjectItem[] {
           projCounter++;
           currentProj = {
             id: `proj_${projCounter}`,
-            title: 'Needs review',
+            title: 'Project',
             description: '',
             bullets: [cleanBullet],
             techStack: [],
@@ -461,7 +461,7 @@ export const parseResumeText = (rawContent: string, fileName: string): ParsedRes
       (l) => l !== fullName && !l.includes('@') && !l.includes('http') && !/\+?\d{7,}/.test(l) && l.length < 80
     ) || '';
     jobTitleRaw = jobTitleRaw.replace(/Noida|India|Delhi|USA|Remote|\|\s*\+?\d+.*/gi, '').trim();
-    const jobTitle = jobTitleRaw || 'Needs review';
+    const jobTitle = jobTitleRaw || '';
 
     // Summary: only the user's actual summary/objective text. Never
     // synthesize a generic sentence when the section is missing.
@@ -474,18 +474,13 @@ export const parseResumeText = (rawContent: string, fileName: string): ParsedRes
     if (educationLines.length > 0) {
       let inst = educationLines[0] || '';
       let degreeLine = educationLines.find((l) => /B\.Tech|B\.S|Bachelor|M\.S|Master|Diploma|Ph\.D/i.test(l)) || educationLines[1] || educationLines[0];
-      // Only use a date range actually present ON the education lines
-      // themselves (never scanned from the whole document, which could
-      // silently pick up an Experience or Achievements date instead), and
-      // preserve its real format — e.g. "09/2021 – 06/2025" stays exactly
-      // that, never rewritten to "2025 – Present".
       const periodMatch = educationLines.join(' ').match(DATE_RANGE_RE);
 
       education.push({
         id: 'edu_1',
-        degree: degreeLine || 'Needs review',
-        institution: inst && inst !== degreeLine ? inst : 'Needs review',
-        period: periodMatch?.[0] || 'Needs review',
+        degree: degreeLine || '',
+        institution: inst && inst !== degreeLine ? inst : '',
+        period: periodMatch?.[0] || '',
         location: '',
       });
     }
@@ -506,25 +501,18 @@ export const parseResumeText = (rawContent: string, fileName: string): ParsedRes
         let titlePart = parts[0]?.trim() || line;
         // Do not invent a company name — leave it flagged for review if the
         // line didn't actually contain one.
-        let compPart = parts[1]?.trim() || 'Needs review';
-        // Only use a date range actually present on this line/nearby text —
-        // never default to "Present". Supports both "YYYY – YYYY" and real
-        // "MM/YYYY – MM/YYYY" formats so real dates are preserved as-is.
+        let compPart = parts[1]?.trim() || '';
         const lineDate = line.match(DATE_RANGE_RE)?.[0];
 
         currentExp = {
           id: `exp_${experiences.length + 1}`,
           title: titlePart,
           company: compPart,
-          period: lineDate || 'Needs review',
+          period: lineDate || '',
           location: '',
           bullets: [],
         };
       } else if (currentExp) {
-        // A wrapped line is NOT a new bullet — only a line that actually
-        // starts with a bullet glyph opens a new one. Anything else is the
-        // continuation of the previous bullet's wrapped text and gets
-        // merged back into it instead of becoming its own fragment/item.
         const hasBulletMarker = BULLET_MARKER_RE.test(line);
         const cleanBullet = line.replace(BULLET_MARKER_RE, '').trim();
         if (cleanBullet.length > 3) {
@@ -543,16 +531,13 @@ export const parseResumeText = (rawContent: string, fileName: string): ParsedRes
     }
 
     if (experiences.length === 0 && expLines.length > 0) {
-      // There was an Experience section but our header/bullet heuristic
-      // couldn't split it into title/company/bullets — surface the real
-      // lines as-is under a flagged entry rather than fabricate one.
       const rawBullets = expLines.filter((l) => l.length > 15).map((l) => l.replace(/^[●•*■–—\-]\s*/u, ''));
       if (rawBullets.length > 0) {
         experiences.push({
           id: 'exp_1',
-          title: jobTitle !== 'Needs review' ? jobTitle : 'Needs review',
-          company: 'Needs review',
-          period: 'Needs review',
+          title: jobTitle || 'Experience',
+          company: '',
+          period: '',
           location: '',
           bullets: rawBullets.slice(0, 5),
         });
