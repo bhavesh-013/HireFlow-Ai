@@ -67,13 +67,11 @@ import {
 } from '../types';
 import { GitHubImportModal } from '../components/app/GitHubImportModal';
 import { templatesConfigService } from '../services/templateConfig.service';
-import { getDefaultSectionItems } from '../services/section.reorder';
+import { getDefaultSectionItems, getDefaultCustomSections } from '../services/section.reorder';
 import { normalizeProjects } from '../utils/resumeTextParser';
 import { AiWritingAssistantInline } from '../components/app/AiWritingAssistantInline';
 import { downloadDocxExport, generateSafeFilename } from '../services/export.service';
 import { atsEngine } from '../services/ats.engine';
-import { FRESHER_DEFAULT_RESUME } from '../data/defaultFresherResume';
-import { EXPERIENCED_DEFAULT_RESUME } from '../data/defaultExperiencedResume';
 import FresherDocumentView from '../components/templates/FresherDocumentView';
 import ExperiencedDocumentView from '../components/templates/ExperiencedDocumentView';
 
@@ -130,16 +128,13 @@ export default function ResumeEditorPage() {
   // order below. Never inferred from years-of-experience math; only ever
   // set by the user (in the builder chooser) or an initial best-guess from
   // an import, which the user can change here at any time.
-  const isFresherInit = (importedData?.resumeType || 'experienced') === 'fresher';
-  const defaultFresher = isFresherInit ? FRESHER_DEFAULT_RESUME : null;
-
   const [resumeType, setResumeType] = useState<ResumeType>(importedData?.resumeType || 'experienced');
   const [fresherLayoutMode, setFresherLayoutMode] = useState<'auto' | '1-column' | '2-column'>('auto');
   const [sections, setSections] = useState<SectionNavItem[]>(
-    importedData?.sectionsOrder || defaultFresher?.sectionsOrder || getDefaultSectionItems(resumeType)
+    importedData?.sectionsOrder || getDefaultSectionItems(resumeType)
   );
   const [customSections, setCustomSections] = useState<CustomSectionData[]>(
-    importedData?.customSections || defaultFresher?.customSections || []
+    importedData?.customSections || getDefaultCustomSections(resumeType)
   );
 
   const [isAddSectionModalOpen, setIsAddSectionModalOpen] = useState(false);
@@ -179,11 +174,11 @@ export default function ResumeEditorPage() {
   } | null>(null);
 
   const [docTitle, setDocTitle] = useState(
-    importedData?.title || defaultFresher?.title || 'Untitled Resume.pdf'
+    importedData?.title || 'Untitled Resume.pdf'
   );
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [targetRole, setTargetRole] = useState(
-    importedData?.targetRole || defaultFresher?.targetRole || ''
+    importedData?.targetRole || ''
   );
 
   // Toast message
@@ -197,15 +192,15 @@ export default function ResumeEditorPage() {
   // start empty (or prefilled from the real logged-in account) rather than
   // a fabricated demo profile.
   const [personalInfo, setPersonalInfo] = useState({
-    fullName: importedData?.personalInfo?.fullName || defaultFresher?.personalInfo?.fullName || currentUser?.full_name || currentUser?.name || '',
-    jobTitle: importedData?.personalInfo?.jobTitle || defaultFresher?.personalInfo?.jobTitle || '',
-    email: importedData?.personalInfo?.email || defaultFresher?.personalInfo?.email || currentUser?.email || '',
-    phone: importedData?.personalInfo?.phone || defaultFresher?.personalInfo?.phone || currentUser?.phone || '',
-    location: importedData?.personalInfo?.location || defaultFresher?.personalInfo?.location || currentUser?.location || '',
+    fullName: importedData?.personalInfo?.fullName || currentUser?.full_name || currentUser?.name || '',
+    jobTitle: importedData?.personalInfo?.jobTitle || '',
+    email: importedData?.personalInfo?.email || currentUser?.email || '',
+    phone: importedData?.personalInfo?.phone || currentUser?.phone || '',
+    location: importedData?.personalInfo?.location || currentUser?.location || '',
     website: importedData?.personalInfo?.website || currentUser?.website || '',
-    github: importedData?.personalInfo?.github || defaultFresher?.personalInfo?.github || currentUser?.github || '',
-    linkedin: importedData?.personalInfo?.linkedin || defaultFresher?.personalInfo?.linkedin || currentUser?.linkedin || '',
-    summary: importedData?.personalInfo?.summary || defaultFresher?.personalInfo?.summary || '',
+    github: importedData?.personalInfo?.github || currentUser?.github || '',
+    linkedin: importedData?.personalInfo?.linkedin || currentUser?.linkedin || '',
+    summary: importedData?.personalInfo?.summary || '',
   });
 
   const [experiences, setExperiences] = useState<ExperienceItem[]>(
@@ -217,29 +212,29 @@ export default function ResumeEditorPage() {
   const [education, setEducation] = useState<EducationItem[]>(
     importedData?.education && importedData.education.length > 0
       ? importedData.education
-      : (defaultFresher?.education || [])
+      : []
   );
 
   const [skills, setSkills] = useState<string>(
-    importedData?.skills || defaultFresher?.skills || ''
+    importedData?.skills || ''
   );
 
   const [projects, setProjects] = useState<ProjectItem[]>(
     importedData?.projects && importedData.projects.length > 0
       ? normalizeProjects(importedData.projects)
-      : (defaultFresher?.projects ? normalizeProjects(defaultFresher.projects) : [])
+      : []
   );
 
   const [certificates, setCertificates] = useState<CertificateItem[]>(
     importedData?.certificates && importedData.certificates.length > 0
       ? importedData.certificates
-      : (defaultFresher?.certificates || [])
+      : []
   );
 
   const [achievements, setAchievements] = useState<AchievementItem[]>(
     importedData?.achievements && importedData.achievements.length > 0
       ? importedData.achievements
-      : (defaultFresher?.achievements || [])
+      : []
   );
 
   // Customization & Styling State
@@ -389,7 +384,17 @@ export default function ResumeEditorPage() {
         const mapped = fromBackendResume(doc);
         setDocTitle(mapped.docTitle);
         setTargetRole(mapped.targetRole);
-        setPersonalInfo(mapped.personalInfo);
+        setPersonalInfo({
+          fullName: mapped.personalInfo.fullName || '',
+          jobTitle: mapped.personalInfo.jobTitle || '',
+          email: mapped.personalInfo.email || '',
+          phone: mapped.personalInfo.phone || '',
+          location: mapped.personalInfo.location || '',
+          website: mapped.personalInfo.website || '',
+          github: mapped.personalInfo.github || '',
+          linkedin: mapped.personalInfo.linkedin || '',
+          summary: mapped.personalInfo.summary || '',
+        });
         if (mapped.experiences.length > 0) setExperiences(mapped.experiences);
         if (mapped.education.length > 0) setEducation(mapped.education);
         if (mapped.skills) setSkills(mapped.skills);
@@ -654,6 +659,37 @@ export default function ResumeEditorPage() {
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  // Switches Fresher/Experienced resume type. Re-applies the type-appropriate
+  // default section order, but — unlike a plain overwrite — preserves any
+  // custom sections the user has already added and any titles they've
+  // renamed, so switching type never silently deletes a user's own content.
+  // This is also why the section list no longer differs between a brand-new
+  // resume and one whose type has been toggled: both paths go through the
+  // same getDefaultSectionItems() source of truth.
+  const switchResumeType = (newType: ResumeType) => {
+    setResumeType(newType);
+    setSections((prev) => {
+      const defaults = getDefaultSectionItems(newType);
+      const defaultIds = new Set(defaults.map((s) => s.id));
+      const preservedCustoms = prev.filter((s) => s.isCustom && !defaultIds.has(s.id));
+      const merged = defaults.map((d) => {
+        const existing = prev.find((s) => s.id === d.id);
+        return existing ? { ...d, title: existing.title, visible: existing.visible } : d;
+      });
+      const stylingIdx = merged.findIndex((s) => s.id === 'styling');
+      const insertAt = stylingIdx === -1 ? merged.length : stylingIdx;
+      const result = [...merged.slice(0, insertAt), ...preservedCustoms, ...merged.slice(insertAt)];
+      return result.map((item, idx) => ({ ...item, num: String(idx + 1).padStart(2, '0') }));
+    });
+    // Only seed the Fresher custom-section scaffolding (Tools & Technologies,
+    // Courses, etc.) if the user hasn't already added their own — never
+    // overwrite content that's already there.
+    if (newType === 'fresher') {
+      setCustomSections((prev) => (prev.length > 0 ? prev : getDefaultCustomSections('fresher')));
+    }
+    showToast(`Switched to ${newType === 'fresher' ? 'Fresher' : 'Experienced'} layout format!`);
   };
 
   // ----------------------------------------------------
@@ -1778,11 +1814,7 @@ export default function ResumeEditorPage() {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          setResumeType('fresher');
-                          setSections(FRESHER_DEFAULT_RESUME.sectionsOrder || getDefaultSectionItems('fresher'));
-                          showToast('Switched to Fresher layout format!');
-                        }}
+                        onClick={() => switchResumeType('fresher')}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
                           resumeType === 'fresher'
                             ? 'bg-[#0B192C] border-[#0B192C] text-white'
@@ -1793,11 +1825,7 @@ export default function ResumeEditorPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setResumeType('experienced');
-                          setSections(getDefaultSectionItems('experienced'));
-                          showToast('Switched to Experienced layout format!');
-                        }}
+                        onClick={() => switchResumeType('experienced')}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
                           resumeType === 'experienced'
                             ? 'bg-[#0B192C] border-[#0B192C] text-white'

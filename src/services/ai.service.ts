@@ -1,38 +1,53 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { authService } from './auth.service';
 
-async function callDirectClaudeApi(systemPrompt: string, userPrompt: string): Promise<string> {
-  const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : ({} as any);
-  const apiKey = env.VITE_ANTHROPIC_API_KEY || env.VITE_CLAUDE_API_KEY;
+export interface ConvHistoryEntry {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
-  if (!apiKey || apiKey.includes('sample-claude-key')) {
-    throw new Error('No valid VITE_ANTHROPIC_API_KEY configured in environment.');
+
+async function callDirectGeminiApi(systemPrompt: string, userPrompt: string): Promise<string> {
+  const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : ({} as any);
+  const apiKey = env.VITE_GEMINI_API_KEY || env.VITE_GOOGLE_AI_API_KEY;
+
+  if (!apiKey || apiKey.includes('sample-gemini-key')) {
+    throw new Error('No valid VITE_GEMINI_API_KEY configured in environment.');
   }
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const model = 'gemini-2.0-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 3000,
-      temperature: 0.2,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
+      systemInstruction: {
+        parts: [{ text: systemPrompt }],
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: userPrompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 3000,
+        responseMimeType: 'application/json',
+      },
     }),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Direct Claude API Error ${res.status}: ${errText}`);
+    throw new Error(`Direct Gemini API Error ${res.status}: ${errText}`);
   }
 
   const data = await res.json();
-  return data?.content?.[0]?.text || '';
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 async function invokeEdgeFunction<T = any>(functionName: string, body: any): Promise<T> {
@@ -66,20 +81,26 @@ async function invokeEdgeFunction<T = any>(functionName: string, body: any): Pro
     }
   }
 
-  // 2. Direct Client-side Claude API invocation if key is present in Vite environment
+  // 2. Direct Client-side Gemini API invocation if key is present in Vite environment
   const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : ({} as any);
-  const clientApiKey = env.VITE_ANTHROPIC_API_KEY || env.VITE_CLAUDE_API_KEY;
+  const clientApiKey = env.VITE_GEMINI_API_KEY || env.VITE_GOOGLE_AI_API_KEY;
 
-  if (clientApiKey && !clientApiKey.includes('sample-claude-key')) {
+  if (clientApiKey && !clientApiKey.includes('sample-gemini-key')) {
     try {
-      const systemPrompt = `You are HireFlow AI powered by Claude 3.5 Sonnet — an expert in resume engineering, ATS optimization, and career coaching. Return strict valid JSON output matching requested task format.`;
+      // Use a career-scoped system prompt for the chat function when called directly
+      const systemPrompt = functionName === 'chat' || functionName.includes('chat')
+        ? `You are HireFlow AI Career Coach powered by Gemini 2.0 Flash.
+Your ONLY purpose is to help users with resume review, ATS optimization, interview preparation, job description analysis, and career strategy.
+REFUSE all off-topic requests with: "I'm your AI Career Coach. I can help with resumes, ATS optimization, job descriptions, career preparation, and interview preparation. Please ask me something related to your resume or interview."
+NEVER fabricate resume content. Return strict valid JSON: {"reply": "...", "suggestions": [], "followUpQuestion": null, "rejected": false}.`
+        : `You are HireFlow AI powered by Gemini 2.0 Flash — an expert in resume engineering, ATS optimization, and career coaching. Return strict valid JSON output matching requested task format.`;
       const userPrompt = `Action: ${functionName}\nInput: ${JSON.stringify(body, null, 2)}`;
-      const rawText = await callDirectClaudeApi(systemPrompt, userPrompt);
+      const rawText = await callDirectGeminiApi(systemPrompt, userPrompt);
       const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
       const parsed = JSON.parse(cleanedJson);
       return { success: true, ...parsed } as T;
     } catch (directErr) {
-      console.warn(`Direct Claude API call failed, falling back to heuristics:`, directErr);
+      console.warn(`Direct Gemini API call failed, falling back to heuristics:`, directErr);
     }
   }
 
@@ -246,7 +267,7 @@ export const aiService = {
   rewriteSkills: (currentSkills: string, targetRole?: string) =>
     invokeEdgeFunction('skills', { currentSkills, targetRole }),
 
-  careerCoach: (message: string, activeSection?: string, resumeData?: any, conversationHistory?: any[]) =>
+  careerCoach: (message: string, activeSection?: string, resumeData?: any, conversationHistory?: ConvHistoryEntry[]) =>
     invokeEdgeFunction('chat', { message, activeSection, resumeData, conversationHistory }),
 
   importGitHubSkills: (repos: any[], targetJobDescription?: string) =>
@@ -257,4 +278,3 @@ export const aiService = {
 };
 
 export default aiService;
-

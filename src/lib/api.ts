@@ -147,6 +147,7 @@ export const resumes = {
   remove: (id: string) => resumeService.remove(id),
   duplicate: (id: string) => resumeService.duplicate(id),
   favorite: (id: string) => resumeService.favorite(id),
+  rename: (id: string, title: string) => resumeService.update(id, { title }),
   archive: (id: string) => resumeService.archive(id),
 };
 

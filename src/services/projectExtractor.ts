@@ -95,12 +95,16 @@ export function extractProjectFromRepo(
   // Base ATS quality score
   const qualityScore = Math.min(98, 85 + Math.min(10, repo.stars) + (filteredTech.length > 2 ? 3 : 0));
 
+  const liveUrl = repo.homepage && repo.homepage.startsWith('http') ? repo.homepage : undefined;
+
   return {
     id: `gh_proj_${repo.id}_${Date.now()}`,
     title: cleanTitle,
     description,
     techStack: filteredTech.slice(0, 6),
     link: repo.url,
+    demoUrl: liveUrl,
+    liveUrl: liveUrl,
     stars: repo.stars,
     bullets,
     projectType: filteredTech.includes('React') || filteredTech.includes('Next.js') ? 'Full Stack' : 'Open Source',

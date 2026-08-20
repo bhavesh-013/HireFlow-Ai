@@ -18,7 +18,6 @@ import ResumeBuilderPage from './pages/ResumeBuilderPage';
 import TailoredResumePage from './pages/TailoredResumePage';
 import ResumeTemplatesPage from './pages/ResumeTemplatesPage';
 import ATSAnalysisPage from './pages/ATSAnalysisPage';
-import JDMatchPage from './pages/JDMatchPage';
 import AICareerCoachPage from './pages/AICareerCoachPage';
 import ProfilePage from './pages/ProfilePage';
 

@@ -21,23 +21,45 @@ import {
   ChevronRight,
   X
 } from 'lucide-react';
-import { mockResumes, ResumeItem } from '../data/mockData';
+import type { ResumeItem } from '../data/resumeListTypes';
 import { resumes as resumesApi, isAuthenticated, getStoredUser } from '../lib/api';
+import { analyzeResume } from '../services/ats.engine';
 
+/**
+ * Converts a stored resume document into a dashboard list item. The ATS
+ * score and structure score are computed live with the deterministic
+ * scoring engine (never faked) — resumes with no content yet score 0
+ * rather than showing a placeholder number.
+ */
 function backendResumeToItem(doc: any): ResumeItem {
+  let atsScore = 0;
+  let structureScore = 0;
+  try {
+    if (doc.resumeData && Object.keys(doc.resumeData).length > 0) {
+      const report = analyzeResume(doc.resumeData);
+      atsScore = report.finalScore;
+      const sections = report.categories?.sections?.score ?? 0;
+      const sectionOrder = report.categories?.sectionOrder?.score ?? 0;
+      structureScore = Math.round((sections + sectionOrder) / 2);
+    }
+  } catch {
+    // If a resume's data is malformed, don't let scoring crash the dashboard —
+    // just show it as unscored rather than fabricating a number.
+  }
+
   return {
-    id: doc._id,
+    id: doc.id || doc._id,
     title: doc.title || 'Untitled Resume',
-    targetRole: doc.resumeData?.personalInfo?.jobTitle || 'Not set',
-    lastModified: doc.lastEdited ? new Date(doc.lastEdited).toLocaleDateString() : 'Just now',
-    updatedAt: doc.lastEdited || doc.updatedAt || new Date().toISOString(),
-    atsScore: doc.atsScore || 0,
-    healthScore: doc.healthScore || 0,
-    tailorScore: doc.atsScore || 0,
-    templateName: doc.template || 'modern',
+    targetRole: doc.targetRole || doc.resumeData?.personalInfo?.jobTitle || 'Not set',
+    lastModified: doc.updatedAt ? new Date(doc.updatedAt).toLocaleDateString() : 'Just now',
+    updatedAt: doc.updatedAt || new Date().toISOString(),
+    atsScore,
+    healthScore: structureScore,
+    tailorScore: structureScore,
+    templateName: doc.templateName || 'modern',
     fileSize: '—',
-    status: doc.status === 'published' ? 'Published' : 'Draft',
-    version: `v${doc.currentVersion || 1}`,
+    status: doc.isArchived ? 'Draft' : 'Published',
+    version: 'v1',
   };
 }
 
@@ -49,54 +71,35 @@ interface ToastState {
 export default function DashboardPage() {
   const navigate = useNavigate();
 
-  // Interactive Resumes State — loaded from the backend; falls back to mock
-  // data only if the backend can't be reached (e.g. not configured yet).
+  // Resumes are always loaded from the real backend (or the local-storage
+  // fallback inside resumeService for guests/offline use) — never from
+  // seeded demo data. An empty list is a legitimate, honest state.
   const [resumesList, setResumesList] = useState<ResumeItem[]>([]);
   const [isLoadingResumes, setIsLoadingResumes] = useState(true);
-  const [usingFallbackData, setUsingFallbackData] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isGuestMode, setIsGuestMode] = useState(false);
   const [toast, setToast] = useState<ToastState>({ show: false, message: '' });
 
-  useEffect(() => {
-    // Guests can browse the workspace, but there's no saved resume list to
-    // fetch without an account — skip the call and show demo data directly,
-    // rather than hitting a 401 and reporting it as a backend outage.
-    if (!isAuthenticated()) {
-      setResumesList(mockResumes);
-      setIsGuestMode(true);
-      setUsingFallbackData(true);
-      setIsLoadingResumes(false);
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const data: any = await resumesApi.list();
-        if (cancelled) return;
+  const loadResumes = () => {
+    setIsLoadingResumes(true);
+    setLoadError(null);
+    resumesApi
+      .list()
+      .then((data: any) => {
         const list = Array.isArray(data) ? data.map(backendResumeToItem) : [];
         setResumesList(list);
-        setUsingFallbackData(false);
-      } catch {
-        if (cancelled) return;
-        // Backend not reachable/configured — show demo data instead of a broken screen
-        setResumesList(mockResumes);
-        setUsingFallbackData(true);
-      } finally {
-        if (!cancelled) setIsLoadingResumes(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      })
+      .catch((err: any) => {
+        setResumesList([]);
+        setLoadError(err?.message || "Couldn't load your resumes. Please try again.");
+      })
+      .finally(() => setIsLoadingResumes(false));
+  };
 
-  // Modal State for LinkedIn / GitHub import
-  const [importModal, setImportModal] = useState<{ open: boolean; platform: 'LinkedIn' | 'GitHub' | null }>({
-    open: false,
-    platform: null
-  });
-  const [importInput, setImportInput] = useState('');
+  useEffect(() => {
+    setIsGuestMode(!isAuthenticated());
+    loadResumes();
+  }, []);
 
   const showNotification = (msg: string) => {
     setToast({ show: true, message: msg });
@@ -106,8 +109,8 @@ export default function DashboardPage() {
   };
 
   const handleContinueResume = () => {
-    if (!usingFallbackData && resumesList.length > 0) {
-      // resumesList is sorted by lastEdited desc — [0] is the latest unfinished resume
+    if (resumesList.length > 0) {
+      // resumesList is sorted by updatedAt desc — [0] is the most recent resume
       navigate(`/app/builder?id=${resumesList[0].id}`);
     } else {
       // No saved resume yet — open Resume Builder upload state
@@ -121,21 +124,6 @@ export default function DashboardPage() {
   };
 
   const handleDuplicate = async (id: string, title: string) => {
-    if (usingFallbackData) {
-      const existing = resumesList.find((r) => r.id === id);
-      if (existing) {
-        const duplicatedItem = {
-          ...existing,
-          id: `res-${Date.now()}`,
-          title: `${title} (Copy)`,
-          lastModified: 'Just now'
-        };
-        setResumesList([duplicatedItem, ...resumesList]);
-        showNotification(`Duplicated "${title}" successfully.`);
-      }
-      return;
-    }
-
     try {
       const created: any = await resumesApi.duplicate(id);
       setResumesList([backendResumeToItem(created), ...resumesList]);
@@ -163,12 +151,6 @@ export default function DashboardPage() {
       return;
     }
 
-    if (usingFallbackData) {
-      setResumesList(resumesList.filter((r) => r.id !== id));
-      showNotification(`Deleted "${title}".`);
-      return;
-    }
-
     try {
       await resumesApi.remove(id);
       setResumesList(resumesList.filter((r) => r.id !== id));
@@ -180,20 +162,15 @@ export default function DashboardPage() {
 
   const handleExport = (id: string, title: string) => {
     sessionStorage.setItem('hireflow_pending_export', 'pdf');
-    if (usingFallbackData) {
-      navigate('/app/builder');
-    } else {
-      navigate(`/app/builder?id=${id}`);
-    }
+    navigate(`/app/builder?id=${id}`);
   };
 
-  const handleImportSubmit = () => {
-    if (!importInput.trim()) return;
-    showNotification(`Successfully imported profile data from ${importModal.platform}!`);
-    setImportModal({ open: false, platform: null });
-    setImportInput('');
-    navigate('/app/ats-analysis');
-  };
+  const latestAtsScore = resumesList[0]?.atsScore ?? null;
+  const atsPotential = latestAtsScore !== null ? Math.max(0, 100 - latestAtsScore) : null;
+  const avgAtsScore =
+    resumesList.length > 0
+      ? Math.round(resumesList.reduce((sum, r) => sum + (r.atsScore || 0), 0) / resumesList.length)
+      : null;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200 text-[#0B192C]">
@@ -205,14 +182,23 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Backend fallback / guest-mode notice */}
-      {!isLoadingResumes && usingFallbackData && (
+      {/* Guest-mode notice */}
+      {!isLoadingResumes && isGuestMode && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800 font-medium flex items-center gap-2">
-          {isGuestMode ? (
-            <span>👋 You're browsing as a guest — showing sample data. <a href="/signup" className="font-bold underline">Sign up free</a> to save real resumes and unlock AI features.</span>
-          ) : (
-            <span>⚠️ Showing demo data — couldn't reach the backend API. Start it with <code className="font-mono bg-amber-100 px-1 rounded">cd backend && npm run dev</code> and refresh.</span>
-          )}
+          <span>👋 You're browsing as a guest — resumes are saved to this browser only. <a href="/signup" className="font-bold underline">Sign up free</a> to save them to your account and unlock AI features.</span>
+        </div>
+      )}
+
+      {/* Real load-error notice — never masked with fake data */}
+      {!isLoadingResumes && loadError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-xs text-red-800 font-medium flex items-center justify-between gap-3">
+          <span>⚠️ {loadError}</span>
+          <button
+            onClick={loadResumes}
+            className="font-bold underline shrink-0 cursor-pointer"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -227,7 +213,17 @@ export default function DashboardPage() {
             Good Morning, {getStoredUser()?.name?.split(' ')[0] || getStoredUser()?.full_name?.split(' ')[0] || 'Candidate'} 👋
           </h1>
           <p className="text-sm sm:text-base text-slate-600 font-medium leading-relaxed">
-            "You're <span className="font-bold text-[#0B192C] underline decoration-blue-500 decoration-2 underline-offset-4">22 ATS points</span> away from a highly optimized resume."
+            {resumesList[0] ? (
+              <>
+                Your latest resume scores{' '}
+                <span className="font-bold text-[#0B192C] underline decoration-blue-500 decoration-2 underline-offset-4">
+                  {resumesList[0].atsScore}/100 on ATS
+                </span>
+                {resumesList[0].atsScore < 100 && ` — ${100 - resumesList[0].atsScore} points to a perfect score.`}
+              </>
+            ) : (
+              'Build your first resume to get a real ATS score and personalized suggestions.'
+            )}
           </p>
         </div>
 
@@ -294,10 +290,10 @@ export default function DashboardPage() {
               </div>
 
               <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl space-y-1">
-                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Target Job Match</span>
+                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Structure Score</span>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-2xl font-black text-[#0B192C]">{resumesList[0]?.tailorScore ?? '—'}</span>
-                  <span className="text-xs text-slate-500 font-bold">% Match</span>
+                  <span className="text-2xl font-black text-[#0B192C]">{resumesList[0]?.healthScore ?? '—'}</span>
+                  <span className="text-xs text-slate-500 font-bold">/ 100</span>
                 </div>
               </div>
             </div>
@@ -312,12 +308,14 @@ export default function DashboardPage() {
             className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer flex items-center justify-between"
           >
             <div className="space-y-1">
-              <span className="text-xs font-bold text-slate-500">ATS Score</span>
+              <span className="text-xs font-bold text-slate-500">Latest ATS Score</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-black text-[#0B192C]">76</span>
-                <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  +18 Potential
-                </span>
+                <span className="text-2xl font-black text-[#0B192C]">{latestAtsScore ?? '—'}</span>
+                {atsPotential !== null && atsPotential > 0 && (
+                  <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    +{atsPotential} Potential
+                  </span>
+                )}
               </div>
             </div>
             <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
@@ -325,16 +323,16 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* KPI 2: Job Match */}
+          {/* KPI 2: Average ATS Score across all resumes */}
           <div
             onClick={handleContinueResume}
             className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer flex items-center justify-between"
           >
             <div className="space-y-1">
-              <span className="text-xs font-bold text-slate-500">Job Match</span>
+              <span className="text-xs font-bold text-slate-500">Average ATS Score</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-black text-[#0B192C]">84%</span>
-                <span className="text-xs text-slate-500 font-medium">Sr. Frontend</span>
+                <span className="text-2xl font-black text-[#0B192C]">{avgAtsScore !== null ? `${avgAtsScore}%` : '—'}</span>
+                <span className="text-xs text-slate-500 font-medium">Across all resumes</span>
               </div>
             </div>
             <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
@@ -342,16 +340,16 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* KPI 3: Tailored Resumes */}
+          {/* KPI 3: Total Resumes */}
           <div
-            onClick={handleContinueResume}
+            onClick={() => navigate('/app/builder?new=1')}
             className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer flex items-center justify-between"
           >
             <div className="space-y-1">
-              <span className="text-xs font-bold text-slate-500">Tailored Resumes</span>
+              <span className="text-xs font-bold text-slate-500">Total Resumes</span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-black text-[#0B192C]">4</span>
-                <span className="text-xs text-slate-500 font-medium">Active versions</span>
+                <span className="text-2xl font-black text-[#0B192C]">{resumesList.length}</span>
+                <span className="text-xs text-slate-500 font-medium">Saved versions</span>
               </div>
             </div>
             <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
@@ -376,6 +374,20 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-2.5">
+            {isLoadingResumes && (
+              <div className="text-center py-8 text-xs text-slate-400 font-medium">Loading your resumes…</div>
+            )}
+            {!isLoadingResumes && resumesList.length === 0 && !loadError && (
+              <div className="text-center py-8 space-y-2">
+                <p className="text-xs text-slate-500 font-medium">You haven't created a resume yet.</p>
+                <button
+                  onClick={() => navigate('/app/builder?new=1')}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
+                >
+                  Create your first resume →
+                </button>
+              </div>
+            )}
             {resumesList.map((res) => (
               <div
                 key={res.id}
@@ -397,7 +409,7 @@ export default function DashboardPage() {
 
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
-                    onClick={() => navigate(usingFallbackData ? '/app/builder' : `/app/builder?id=${res.id}`)}
+                    onClick={() => navigate(`/app/builder?id=${res.id}`)}
                     className="px-3 py-1.5 bg-[#0B192C] hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1"
                   >
                     <span>Edit</span>
@@ -437,111 +449,31 @@ export default function DashboardPage() {
             <span className="font-mono text-[11px] text-slate-400">Chronological</span>
           </div>
 
-          <div className="space-y-4 relative pl-3 before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-            {/* Timeline item 1 */}
-            <div className="relative pl-5 space-y-1">
-              <div className="absolute -left-[5px] top-1.5 w-3 h-3 rounded-full bg-[#0B192C] border-2 border-white ring-2 ring-slate-100" />
-              <span className="text-[10px] font-mono font-bold text-slate-400 block">2 hours ago</span>
-              <h4 className="text-xs font-bold text-[#0B192C]">Resume Edited</h4>
-              <p className="text-[11px] text-slate-500">Updated Senior Software Engineer.pdf experience section.</p>
+          {resumesList.length === 0 ? (
+            <p className="text-xs text-slate-400 py-6 text-center">
+              Activity from your resumes will show up here once you start building.
+            </p>
+          ) : (
+            <div className="space-y-4 relative pl-3 before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+              {resumesList.slice(0, 5).map((res, i) => (
+                <div key={res.id} className="relative pl-5 space-y-1">
+                  <div
+                    className={`absolute -left-[5px] top-1.5 w-3 h-3 rounded-full border-2 border-white ring-2 ${
+                      i === 0 ? 'bg-[#0B192C] ring-slate-100' : 'bg-slate-400 ring-slate-100'
+                    }`}
+                  />
+                  <span className="text-[10px] font-mono font-bold text-slate-400 block">{res.lastModified}</span>
+                  <h4 className="text-xs font-bold text-[#0B192C]">{res.title}</h4>
+                  <p className="text-[11px] text-slate-500">
+                    ATS score {res.atsScore}/100 &middot; {res.status}
+                  </p>
+                </div>
+              ))}
             </div>
-
-            {/* Timeline item 2 */}
-            <div className="relative pl-5 space-y-1">
-              <div className="absolute -left-[5px] top-1.5 w-3 h-3 rounded-full bg-blue-600 border-2 border-white ring-2 ring-blue-50" />
-              <span className="text-[10px] font-mono font-bold text-slate-400 block">5 hours ago</span>
-              <h4 className="text-xs font-bold text-[#0B192C]">ATS Scan Completed</h4>
-              <p className="text-[11px] text-slate-500">Score improved from 68 to 76 (+8 ATS points).</p>
-            </div>
-
-            {/* Timeline item 3 */}
-            <div className="relative pl-5 space-y-1">
-              <div className="absolute -left-[5px] top-1.5 w-3 h-3 rounded-full bg-emerald-600 border-2 border-white ring-2 ring-emerald-50" />
-              <span className="text-[10px] font-mono font-bold text-slate-400 block">Yesterday</span>
-              <h4 className="text-xs font-bold text-[#0B192C]">AI Suggestions Applied</h4>
-              <p className="text-[11px] text-slate-500">Added Docker, STAR metrics, and optimized header format.</p>
-            </div>
-
-            {/* Timeline item 4 */}
-            <div className="relative pl-5 space-y-1">
-              <div className="absolute -left-[5px] top-1.5 w-3 h-3 rounded-full bg-slate-400 border-2 border-white ring-2 ring-slate-100" />
-              <span className="text-[10px] font-mono font-bold text-slate-400 block">2 days ago</span>
-              <h4 className="text-xs font-bold text-[#0B192C]">Resume Exported</h4>
-              <p className="text-[11px] text-slate-500">Exported Fullstack Developer (Stripe).pdf as ATS-compliant PDF.</p>
-            </div>
-
-            {/* Timeline item 5 */}
-            <div className="relative pl-5 space-y-1">
-              <div className="absolute -left-[5px] top-1.5 w-3 h-3 rounded-full bg-slate-400 border-2 border-white ring-2 ring-slate-100" />
-              <span className="text-[10px] font-mono font-bold text-slate-400 block">3 days ago</span>
-              <h4 className="text-xs font-bold text-[#0B192C]">Job Tailored</h4>
-              <p className="text-[11px] text-slate-500">Matched resume with Stripe Senior Engineer job description.</p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Import Modal for LinkedIn / GitHub */}
-      {importModal.open && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                {importModal.platform === 'LinkedIn' ? (
-                  <Linkedin className="text-[#0077B5]" size={20} />
-                ) : (
-                  <Github className="text-slate-900" size={20} />
-                )}
-                <h3 className="font-bold text-base text-[#0B192C]">
-                  Import from {importModal.platform}
-                </h3>
-              </div>
-              <button
-                onClick={() => setImportModal({ open: false, platform: null })}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Enter your {importModal.platform} profile URL or handle to automatically extract skills, work history, and projects.
-            </p>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#0B192C]">
-                {importModal.platform} Profile URL
-              </label>
-              <input
-                type="text"
-                value={importInput}
-                onChange={(e) => setImportInput(e.target.value)}
-                placeholder={
-                  importModal.platform === 'LinkedIn'
-                    ? 'https://linkedin.com/in/alexkumar'
-                    : 'https://github.com/alexkumar'
-                }
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans text-[#0B192C] focus:outline-none focus:ring-2 focus:ring-[#0B192C]"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setImportModal({ open: false, platform: null })}
-                className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleImportSubmit}
-                className="px-5 py-2 bg-[#0B192C] hover:bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs"
-              >
-                Start Import
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

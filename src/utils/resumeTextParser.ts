@@ -314,7 +314,7 @@ export const extractCleanTextFromFileContent = (rawText: string, fileName: strin
       // Match parenthesized text strings in PDF streams: (Sahil Nagpal) Tj or (StockX India...)
       const literalMatches = rawText.match(/\(([^()]{2,200})\)/g) || [];
       if (literalMatches.length > 0) {
-        literalMatches.forEach((m) => {
+        (literalMatches as string[]).forEach((m: string) => {
           const cleanStr = m
             .slice(1, -1)
             .replace(/\\([()])/g, '$1')

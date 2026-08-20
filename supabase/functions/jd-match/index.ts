@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { buildClaudeSystemPrompt } from '../_shared/ai-prompts.ts';
-import { callClaudeApi, parseJsonFromClaude } from '../_shared/claude-client.ts';
+import { buildGeminiSystemPrompt } from '../_shared/ai-prompts.ts';
+import { callGeminiApi, parseJsonFromGemini } from '../_shared/gemini-client.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,7 +15,7 @@ serve(async (req) => {
   try {
     const { resumeData, jobDescription } = await req.json();
 
-    const featureTask = `Perform a detailed analysis comparing this resume against the target job description using Claude 3.5 Sonnet.
+    const featureTask = `Perform a detailed analysis comparing this resume against the target job description using Gemini 2.0 Flash.
 
 Dimensions:
 1. Keyword matching (skills present vs required)
@@ -40,17 +40,17 @@ Dimensions:
   "gapAreas": ["gap 1"]
 }`;
 
-    const systemPrompt = buildClaudeSystemPrompt(featureTask, jsonSchema);
+    const systemPrompt = buildGeminiSystemPrompt(featureTask, jsonSchema);
     const userPrompt = `Resume Data:\n${JSON.stringify(resumeData || {}, null, 2)}\n\nJob Description:\n${jobDescription || 'No job description provided'}`;
 
-    const text = await callClaudeApi({
+    const text = await callGeminiApi({
       systemPrompt,
       userPrompt,
       temperature: 0.2,
       maxTokens: 3000,
     });
 
-    const parsed = parseJsonFromClaude(text);
+    const parsed = parseJsonFromGemini(text);
 
     return new Response(JSON.stringify({ success: true, ...parsed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

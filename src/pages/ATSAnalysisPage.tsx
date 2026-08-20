@@ -55,17 +55,16 @@ import {
   UserCheck,
   Trophy,
   Globe,
-  Layout
+  Layout,
+  BriefcaseBusiness
 } from 'lucide-react';
 import { parseResumeFile } from '../utils/fileParser';
 import { parseResumeText } from '../utils/resumeTextParser';
-import { ParsedResumeData, ATSFullReport, ATSCategoryResult, ATSCategoryKey } from '../types';
+import { ParsedResumeData } from '../types';
 import { isAuthenticated } from '../lib/api';
 import { rememberCurrentLocationForRedirect } from '../lib/authGate';
 import LoginRequiredModal from '../components/app/LoginRequiredModal';
-import { atsEngine } from '../services/ats.engine';
 import { analyzeJobDescription, type JDAnalysis } from '../services/jd.analyzer';
-import { buildKeywordReport, type KeywordReport, type KeywordCategoryGroup } from '../services/keyword.engine';
 import { generateImprovements, applyImprovement, type ImprovementSuggestion } from '../services/ai.improvement';
 import { getRecommendedSectionOrder, type SectionOrderRecommendation } from '../services/section.reorder';
 import { validateResume, type ValidationIssue } from '../services/resume.validator';
@@ -85,27 +84,98 @@ export default function ATSAnalysisPage() {
   // Scan Mode State: 'general' vs 'jd-match'
   const [scanMode, setScanMode] = useState<'general' | 'jd-match'>('general');
   const [isScanning, setIsScanning] = useState(false);
-  const [currentResumeName, setCurrentResumeName] = useState('Senior Frontend Engineer.pdf');
+  const [currentResumeName, setCurrentResumeName] = useState('No resume selected');
   const [uploadedTime, setUploadedTime] = useState('12 seconds ago');
   const [showJdModal, setShowJdModal] = useState(false);
-  const [jobDescription, setJobDescription] = useState(
-    `We are seeking a Senior Full Stack Software Engineer to build scalable microservices and high-throughput React frontends. 
-Requirements:
-- 5+ years of experience with React, TypeScript, and Node.js
-- Strong knowledge of PostgreSQL, Redis query caching, and Docker containerization
-- Hands-on experience with AWS Cloud Services and CI/CD automated deployment pipelines
-- Track record of writing Jest & Playwright unit/E2E test suites`
-  );
+  const [jobDescription, setJobDescription] = useState('');
 
   // File Upload & Drag and Drop Handlers
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // ATS Engine State
-  const [atsReport, setAtsReport] = useState<ATSFullReport | null>(null);
+  // Backend ATS report — the Supabase analyze-resume function is the
+  // single source of truth for ATS scoring.
+  type ATSCriterionKey =
+    | 'contact'
+    | 'structure'
+    | 'experience'
+    | 'skills'
+    | 'projects'
+    | 'education'
+    | 'formatting'
+    | 'contentQuality';
 
-  // Score & Metrics State
+  type ATSCriterion = {
+    key: ATSCriterionKey;
+    label: string;
+    score: number;
+    passed?: boolean;
+    priority?: string;
+    reason?: string;
+    fixSuggestion?: string;
+    issues?: string[];
+    suggestions?: string[];
+  };
+
+  type BackendATSReport = {
+    success?: boolean;
+    finalScore: number;
+    analysisSource?: string;
+    resumeType?: 'fresher' | 'experienced';
+    confidence?: number;
+    categories?: Record<ATSCriterionKey, ATSCriterion>;
+    criteria?: Record<ATSCriterionKey, ATSCriterion>;
+    topFixes?: Array<{
+      key?: string;
+      label: string;
+      score: number;
+      priority?: string;
+      reason: string;
+      fixSuggestion?: string;
+      estimatedAtsGain?: number;
+    }>;
+    missingKeywords?: Array<{
+      keyword: string;
+      frequency?: number;
+      estimatedGain?: number;
+      reason?: string;
+    }>;
+    jdMatch?: {
+      enabled?: boolean;
+      score: number;
+      matchedKeywords?: string[];
+      missingKeywords?: string[];
+      summary?: string;
+    };
+    summary?: string;
+    overallSummary?: string;
+  };
+
+  const ATS_CRITERIA: Array<{ key: ATSCriterionKey; label: string }> = [
+    { key: 'contact', label: 'Contact' },
+    { key: 'structure', label: 'Structure' },
+    { key: 'experience', label: 'Experience' },
+    { key: 'skills', label: 'Skills' },
+    { key: 'projects', label: 'Projects' },
+    { key: 'education', label: 'Education' },
+    { key: 'formatting', label: 'Formatting' },
+    { key: 'contentQuality', label: 'Content Quality' },
+  ];
+
+  const categoryIconMap: Record<ATSCriterionKey, any> = {
+    contact: UserCheck,
+    structure: Layers,
+    experience: BriefcaseBusiness,
+    skills: Cpu,
+    projects: FileCode,
+    education: BookOpen,
+    formatting: Layout,
+    contentQuality: CheckCircle2,
+  };
+
+  const [atsReport, setAtsReport] = useState<BackendATSReport | null>(null);
   const [atsScore, setAtsScore] = useState(0);
+  const [atsError, setAtsError] = useState<string | null>(null);
   const [previewTab, setPreviewTab] = useState<'preview' | 'compare'>('preview');
   const [previewZoom, setPreviewZoom] = useState(100);
 
@@ -116,41 +186,26 @@ Requirements:
   const [isGeneratedSuccess, setIsGeneratedSuccess] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // Missing Keywords State (engine-driven)
   const [missingKeywords, setMissingKeywords] = useState<
     Array<{ name: string; frequency: number; boost: number; added: boolean }>
   >([]);
   const [keywordFilter, setKeywordFilter] = useState('');
 
-  // New enterprise engine state
   const [jdAnalysis, setJdAnalysis] = useState<JDAnalysis | null>(null);
-  const [keywordReport, setKeywordReport] = useState<KeywordReport | null>(null);
   const [aiImprovements, setAiImprovements] = useState<ImprovementSuggestion[]>([]);
   const [sectionReorder, setSectionReorder] = useState<SectionOrderRecommendation | null>(null);
-  const [projectedScore, setProjectedScore] = useState<number>(0);
   const [openKeywordCategories, setOpenKeywordCategories] = useState<Record<string, boolean>>({});
   const [openImprovementsPanel, setOpenImprovementsPanel] = useState(true);
 
-  // Accordion Sections Open State
   const [openInsights, setOpenInsights] = useState<{ [key: string]: boolean }>({
     good: true,
     improvements: true,
     issues: true,
   });
 
-  // Category group accordion state
-  const [openCategoryGroups, setOpenCategoryGroups] = useState<{ [key: string]: boolean }>({
-    content: true,
-    format: true,
-    keywords: true,
-    links: false,
-    quality: false,
-  });
-
-  // Engine-driven categories (28 categories mapped from ATSFullReport)
   const [categories, setCategories] = useState<Array<{
     id: string;
-    key: ATSCategoryKey;
+    key: ATSCriterionKey;
     name: string;
     score: number;
     status: string;
@@ -162,7 +217,6 @@ Requirements:
     fixSuggestion: string;
   }>>([]);
 
-  // Engine-driven issues (mapped from topFixes)
   const [issues, setIssues] = useState<Array<{
     id: string;
     title: string;
@@ -184,70 +238,6 @@ Requirements:
   // directly without re-deriving them.
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
 
-  // Category icon map
-  const categoryIconMap: Record<string, any> = {
-    formatting: Layout,
-    sections: Layers,
-    sectionOrder: AlignLeft,
-    keywords: Code,
-    hardSkills: Cpu,
-    softSkills: UserCheck,
-    experience: BarChart3,
-    projects: FileCode,
-    education: BookOpen,
-    certificates: Award,
-    achievements: Trophy,
-    metrics: TrendingUp,
-    starFormat: Star,
-    actionVerbs: Sparkles,
-    leadership: ShieldCheck,
-    readability: FileText,
-    bulletQuality: CheckCheck,
-    length: AlignLeft,
-    title: Sliders,
-    contactInfo: Info,
-    github: Github,
-    portfolio: Globe,
-    linkedin: Linkedin,
-    missingSkills: Search,
-    repeatedKeywords: Hash,
-    keywordDensity: Activity,
-    dateConsistency: Calendar,
-    grammarTypos: CheckCircle2,
-  };
-
-  // Category group definitions
-  const categoryGroups = [
-    {
-      key: 'content',
-      label: 'Content & Substance',
-      icon: FileText,
-      color: 'blue',
-      keys: ['experience', 'projects', 'education', 'certificates', 'achievements', 'metrics', 'starFormat', 'softSkills', 'hardSkills'] as ATSCategoryKey[],
-    },
-    {
-      key: 'format',
-      label: 'Format & Structure',
-      icon: Layout,
-      color: 'purple',
-      keys: ['formatting', 'sections', 'sectionOrder', 'length', 'title', 'contactInfo', 'readability', 'bulletQuality', 'dateConsistency'] as ATSCategoryKey[],
-    },
-    {
-      key: 'keywords',
-      label: 'Keywords & Skills',
-      icon: Code,
-      color: 'amber',
-      keys: ['keywords', 'missingSkills', 'keywordDensity', 'repeatedKeywords', 'actionVerbs', 'leadership'] as ATSCategoryKey[],
-    },
-    {
-      key: 'links',
-      label: 'Links & Grammar',
-      icon: Link2,
-      color: 'emerald',
-      keys: ['github', 'portfolio', 'linkedin', 'grammarTypos'] as ATSCategoryKey[],
-    },
-  ];
-
   // Captures the score from the very first real analysis of an uploaded
   // resume, before any AI fixes are applied — this is the honest "before"
   // score used later for the original-vs-improved comparison. It is never
@@ -262,65 +252,81 @@ Requirements:
     Array<{ id: string; title: string; section: string; details: string }>
   >([]);
 
-  // Run the ATS engine and populate all state
-  const runAnalysis = useCallback((resumeData: ParsedResumeData, jd?: string) => {
-    const report = atsEngine.analyzeResume(resumeData, { jobDescription: jd });
-    if (initialAtsScoreRef.current === null) {
-      initialAtsScoreRef.current = report.finalScore;
-    }
-    setAtsReport(report);
-    setAtsScore(report.finalScore);
+  const normalizeBackendScore = (value: unknown): number => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    // Backend category scores may be 0-10; finalScore is 0-100.
+    return n <= 10 ? n * 10 : Math.min(100, Math.max(0, n));
+  };
 
-    // Map categories
-    const mappedCats = Object.values(report.categories).map((cat) => ({
-      id: `cat_${cat.key}`,
-      key: cat.key,
-      name: cat.label,
-      score: cat.score,
-      status: cat.score >= 85 ? 'Excellent' : cat.score >= 70 ? 'Good' : cat.score >= 50 ? 'Average' : 'Needs Work',
-      color: cat.score >= 85 ? 'emerald' : cat.score >= 70 ? 'blue' : cat.score >= 50 ? 'amber' : 'red',
-      icon: categoryIconMap[cat.key] || FileText,
-      desc: cat.reason,
-      priority: cat.priority,
-      estimatedAtsGain: cat.estimatedAtsGain,
-      fixSuggestion: cat.fixSuggestion,
-    }));
+  const getCriterionRecord = (report: BackendATSReport) =>
+    report.categories ?? report.criteria ?? {};
+
+  const mapBackendReport = (report: BackendATSReport, resumeData: ParsedResumeData, jd?: string) => {
+    const records = getCriterionRecord(report);
+
+    const mappedCats = ATS_CRITERIA.map(({ key, label }) => {
+      const cat = records[key];
+      if (!cat) return null;
+
+      const score = normalizeBackendScore(cat.score);
+      return {
+        id: `cat_${key}`,
+        key,
+        name: cat.label || label,
+        score,
+        status: score >= 85 ? 'Excellent' : score >= 70 ? 'Good' : score >= 50 ? 'Average' : 'Needs Work',
+        color: score >= 85 ? 'emerald' : score >= 70 ? 'blue' : score >= 50 ? 'amber' : 'red',
+        icon: categoryIconMap[key] || FileText,
+        desc: cat.reason || 'No additional explanation provided.',
+        priority: cat.priority || 'Info',
+        estimatedAtsGain: 0,
+        fixSuggestion: cat.fixSuggestion || cat.suggestions?.[0] || 'Review this section and improve it using only truthful information.',
+      };
+    }).filter(Boolean) as Array<{
+      id: string; key: ATSCriterionKey; name: string; score: number; status: string;
+      color: string; icon: any; desc: string; priority: string; estimatedAtsGain: number; fixSuggestion: string;
+    }>;
+
     setCategories(mappedCats);
 
-    // Map top fixes to issues
-    const mappedIssues = report.topFixes.map((fix, i) => ({
-      id: `iss_${i + 1}`,
-      title: fix.label,
-      type: fix.priority === 'Critical' ? 'critical' : 'warning',
-      category: fix.key,
-      impact: `+${fix.estimatedAtsGain} ATS`,
-      time: fix.estimatedAtsGain >= 8 ? '15 sec' : '30 sec',
-      message: fix.reason,
-      whyRejects: `This category scored ${fix.score}/100. ${fix.priority === 'Critical' ? 'ATS systems may reject resumes failing this check.' : 'This is reducing your overall ATS score.'}`,
-      howToFix: fix.fixSuggestion,
-      beforeText: fix.reason.length > 60 ? fix.reason.slice(0, 80) + '...' : fix.reason,
-      afterText: fix.fixSuggestion.length > 60 ? fix.fixSuggestion.slice(0, 120) + '...' : fix.fixSuggestion,
-      fixed: false,
-    }));
+    const mappedIssues = (report.topFixes ?? []).map((fix, i) => {
+      const score = normalizeBackendScore(fix.score);
+      const priority = (fix.priority || 'Warning').toLowerCase();
+      return {
+        id: `iss_${i + 1}`,
+        title: fix.label,
+        type: priority.includes('critical') ? 'critical' : priority.includes('warning') ? 'warning' : 'info',
+        category: fix.key || 'general',
+        impact: `Current score: ${score}/100`,
+        time: '',
+        message: fix.reason,
+        whyRejects: fix.reason,
+        howToFix: fix.fixSuggestion || 'Review this item and make a truthful improvement.',
+        beforeText: fix.reason.length > 80 ? `${fix.reason.slice(0, 80)}...` : fix.reason,
+        afterText: fix.fixSuggestion || '',
+        fixed: false,
+      };
+    });
 
-    // Real red-line validation pass (grammar / spelling / formatting /
-    // content / consistency / completeness) — grounded only in this
-    // resume's actual text, never fabricated. See resume.validator.ts.
     const realValidationIssues = validateResume(resumeData);
     setValidationIssues(realValidationIssues);
+
     const mappedValidationIssues = realValidationIssues
       .filter((v) => v.confidence >= 0.6)
       .slice(0, 12)
       .map((v, i) => ({
         id: `val_${i + 1}`,
-        title: v.original ? `${v.type[0].toUpperCase()}${v.type.slice(1)}: "${v.original.slice(0, 40)}${v.original.length > 40 ? '…' : ''}"` : `${v.type[0].toUpperCase()}${v.type.slice(1)} issue`,
+        title: v.original
+          ? `${v.type[0].toUpperCase()}${v.type.slice(1)}: "${v.original.slice(0, 40)}${v.original.length > 40 ? '…' : ''}"`
+          : `${v.type[0].toUpperCase()}${v.type.slice(1)} issue`,
         type: v.confidence >= 0.85 ? 'critical' : 'warning',
         category: v.type,
         impact: '',
         time: '10 sec',
         message: v.explanation,
         whyRejects: v.explanation,
-        howToFix: v.suggestion || 'Review and edit this manually — no automatic fix is confident enough to apply.',
+        howToFix: v.suggestion || 'Review and edit this manually.',
         beforeText: v.original,
         afterText: v.suggestion,
         fixed: false,
@@ -328,95 +334,92 @@ Requirements:
 
     setIssues([...mappedIssues, ...mappedValidationIssues]);
 
-    // Map missing keywords (engine-driven, never hardcoded)
-    const mappedKeywords = report.missingKeywords.map((kw) => ({
-      name: kw.keyword,
-      frequency: kw.frequency * 10,
-      boost: Math.min(6, kw.estimatedGain),
-      added: false,
-    }));
-    setMissingKeywords(mappedKeywords);
+    setMissingKeywords(
+      (report.missingKeywords ?? []).map((kw) => ({
+        name: kw.keyword,
+        frequency: kw.frequency ?? 1,
+        // Intentionally zero: the backend does not promise a score gain.
+        boost: 0,
+        added: false,
+      }))
+    );
 
-    // ── NEW: JD Analysis ──────────────────────────────────────────────────
-    const jdResult = jd ? analyzeJobDescription(jd) : null;
-    setJdAnalysis(jdResult);
+    if (report.jdMatch && report.jdMatch.enabled !== false) {
+      setJdAnalysis(analyzeJobDescription(jd || ''));
+    } else if (!jd) {
+      setJdAnalysis(null);
+    }
 
-    // ── NEW: Keyword Intelligence Report ─────────────────────────────────
-    const kwReport = buildKeywordReport(resumeData, jdResult?.keywords ?? null, jd);
-    setKeywordReport(kwReport);
-    // Initialize open state for keyword categories
-    const initOpen: Record<string, boolean> = {};
-    kwReport.categories.forEach((c, i) => { initOpen[c.key as string] = i < 3; });
-    setOpenKeywordCategories(initOpen);
+    setAiImprovements(generateImprovements(resumeData));
+    setSectionReorder(getRecommendedSectionOrder(resumeData));
+  };
 
-    // ── NEW: AI Improvements (no fabrication) ─────────────────────────────
-    const improvements = generateImprovements(resumeData);
-    setAiImprovements(improvements);
+  const runAnalysis = useCallback(async (resumeData: ParsedResumeData, jd?: string) => {
+    setIsScanning(true);
+    setAtsError(null);
 
-    // ── NEW: Section Reorder Recommendation ──────────────────────────────
-    const reorderRec = getRecommendedSectionOrder(resumeData);
-    setSectionReorder(reorderRec);
+    try {
+      const { supabase, isSupabaseConfigured } = await import('../services/supabaseClient');
 
-    // ── NEW: Projected Score Calculation ─────────────────────────────────
-    const totalPotentialGain = improvements.reduce((acc, imp) => acc + imp.expectedAtsGain, 0);
-    const engineGain = report.topFixes.reduce((acc, f) => acc + f.estimatedAtsGain, 0);
-    const combinedGain = Math.max(totalPotentialGain, engineGain);
-    setProjectedScore(Math.min(98, report.finalScore + combinedGain));
+      if (!isSupabaseConfigured()) {
+        throw new Error('ATS analysis service is not configured.');
+      }
 
+      const { data, error } = await supabase.functions.invoke('analyze-resume', {
+        body: {
+          resumeData,
+          targetJobDescription: jd?.trim() || null,
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.success && typeof data?.finalScore !== 'number') {
+        throw new Error(data?.error || 'ATS analysis failed.');
+      }
+      if (typeof data.finalScore !== 'number') {
+        throw new Error('Invalid ATS response: finalScore is missing.');
+      }
+
+      const report = data as BackendATSReport;
+      const finalScore = Math.round(Math.max(0, Math.min(100, report.finalScore)));
+
+      if (initialAtsScoreRef.current === null) {
+        initialAtsScoreRef.current = finalScore;
+      }
+
+      setAtsReport(report);
+      setAtsScore(finalScore);
+      mapBackendReport(report, resumeData, jd);
+
+      return report;
+    } catch (error) {
+      console.error('ATS analysis failed:', error);
+      const message = error instanceof Error ? error.message : 'Unable to analyze resume.';
+      setAtsError(message);
+      return null;
+    } finally {
+      setIsScanning(false);
+    }
   }, []);
 
   // AI Resume Preview State
   const [previewData, setPreviewData] = useState<ParsedResumeData>({
     personalInfo: {
-      fullName: 'Alex Kumar',
-      jobTitle: 'Senior Frontend / Fullstack Engineer',
-      email: 'alex.kumar@hireflow.ai',
-      phone: '+1 (555) 382-9011',
-      location: 'San Francisco, CA',
-      website: 'https://alexkumar.dev',
-      linkedin: 'https://linkedin.com/in/alexkumar-dev',
-      github: 'https://github.com/alexkumar-dev',
-      summary:
-        'Product-focused Senior Frontend Engineer with 6+ years of experience building scalable web applications with React, TypeScript, and modern UI systems. Proven track record of delivering 99.9% uptime UI architectures.',
+      fullName: '',
+      jobTitle: '',
+      email: '',
+      phone: '',
+      location: '',
+      website: '',
+      linkedin: '',
+      github: '',
+      summary: '',
     },
-    skills:
-      'Frontend: React 18, Next.js, TypeScript, Tailwind CSS, Redux | Backend: Node.js, Express, REST APIs | Database: PostgreSQL',
-    experiences: [
-      {
-        id: 'exp_1',
-        company: 'TechCorp Innovations',
-        title: 'Senior Frontend Engineer',
-        period: '2022 - Present',
-        location: 'San Francisco, CA',
-        bullets: [
-          'Architected high-throughput React SPA utilizing Zustand state management for 120k monthly active users.',
-          'Integrated Gemini AI API with sub-300ms latency, driving automated resume parsing and real-time ATS scoring.',
-          'Automated frontend build pipelines using Vite and GitHub Actions, maintaining 99.9% uptime.'
-        ]
-      }
-    ],
-    education: [
-      {
-        id: 'edu_1',
-        degree: 'B.S. in Computer Science',
-        institution: 'University of California, Berkeley',
-        period: '2016 - 2020',
-        location: 'Berkeley, CA'
-      }
-    ],
+    skills: '',
+    experiences: [],
+    education: [],
     certificates: [],
-    projects: [
-      {
-        id: 'proj_1',
-        title: 'HireFlow AI Workspace',
-        description: 'AI-powered resume creation platform with ATS keyword scoring & PDF parsing pipeline.',
-        bullets: [
-          'Architected high-throughput full-stack resume platform using React 18, TypeScript, and Express serving 120k+ monthly requests.',
-          'Integrated Google Gemini AI API to extract target keywords and auto-score candidate resumes with sub-300ms latency.'
-        ],
-        techStack: ['React 18', 'TypeScript', 'Node.js', 'Express', 'Gemini AI', 'Tailwind CSS']
-      }
-    ]
+    projects: [],
   });
 
   // State tracking whether user has loaded/uploaded a resume
@@ -482,35 +485,46 @@ Requirements:
   // Handlers for File Upload
   const handleFileUpload = async (file: File) => {
     if (!file) return;
+
     const fileName = file.name;
-    const fileSizeFormatted =
-      file.size > 1024 * 1024
-        ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
-        : `${(file.size / 1024).toFixed(1)} KB`;
+    const extension = fileName.split('.').pop()?.toLowerCase() || '';
+    const allowedExtensions = ['pdf', 'docx', 'doc', 'txt', 'rtf'];
+
+    if (!allowedExtensions.includes(extension)) {
+      showToast('Unsupported file. Please upload PDF, DOCX, DOC, TXT or RTF.');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Resume must be smaller than 10MB.');
+      return;
+    }
 
     setCurrentResumeName(fileName);
     setUploadedTime('Just now');
-    showToast(`Imported "${fileName}" (${fileSizeFormatted}) — parsing resume...`);
-
-    const processParsedData = (parsed: ParsedResumeData) => {
-      setPreviewData(parsed);
-      setHasResumeData(true);
-      const jd = scanMode === 'jd-match' ? jobDescription : undefined;
-      runAnalysis(parsed, jd);
-      showToast(`ATS audit of "${fileName}" complete — 28 categories scored!`);
-    };
+    setAtsError(null);
+    showToast(`Imported "${fileName}" — parsing resume...`);
 
     try {
       const cleanText = await parseResumeFile(file);
+      if (!cleanText?.trim()) {
+        throw new Error('No readable resume text was found.');
+      }
+
       const parsed = parseResumeText(cleanText, fileName);
-      processParsedData(parsed);
+      setPreviewData(parsed);
+      setHasResumeData(true);
+
+      const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+      const report = await runAnalysis(parsed, jd);
+
+      if (report) {
+        showToast(`ATS analysis complete — ${ATS_CRITERIA.length} criteria evaluated.`);
+      }
     } catch (err) {
       console.error('File parsing error:', err);
-      const fallbackParsed: ParsedResumeData = {
-        ...previewData,
-        title: fileName,
-      };
-      processParsedData(fallbackParsed);
+      setHasResumeData(false);
+      showToast(err instanceof Error ? err.message : 'Unable to parse this resume.');
     }
   };
 
@@ -548,61 +562,42 @@ Requirements:
     setOpenInsights((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Handle Keyword Add — mutates real resume content, then RE-RUNS the real
-  // ATS engine on the updated content. The score change the user sees is
-  // whatever the engine actually computes, never an arbitrary +N boost.
-  const handleAddKeyword = (kwName: string) => {
-    const alreadyAdded = missingKeywords.find((k) => k.name === kwName)?.added;
-    if (alreadyAdded) return;
+  // Add a keyword only after explicit user confirmation. The score is
+  // recalculated by the backend after the resume content changes.
+  const handleAddKeyword = async (kwName: string) => {
+    if (gateAiAction()) return;
 
-    const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+    const item = missingKeywords.find((k) => k.name === kwName);
+    if (!item || item.added) return;
+
+    const confirmed = window.confirm(
+      `Only add "${kwName}" if you genuinely have this skill or experience. Continue?`
+    );
+    if (!confirmed) return;
+
+    const currentSkills = previewData.skills || '';
+    const alreadyPresent = currentSkills.toLowerCase().includes(kwName.toLowerCase());
     const updatedResume: ParsedResumeData = {
       ...previewData,
-      skills: previewData.skills.includes(kwName) ? previewData.skills : `${previewData.skills}, ${kwName}`,
+      skills: alreadyPresent ? currentSkills : currentSkills ? `${currentSkills}, ${kwName}` : kwName,
     };
 
-    const prevScore = atsScore;
     setPreviewData(updatedResume);
     setImprovedSections((prev) => ({ ...prev, skills: true }));
-    runAnalysis(updatedResume, jd);
-    // Preserve "added" flags for keywords the user has explicitly accepted,
-    // since a fresh engine run only reports what's still missing.
-    setMissingKeywords((prev) =>
-      prev.map((k) => (k.name === kwName ? { ...k, added: true } : k))
-    );
+    setMissingKeywords((prev) => prev.map((k) => k.name === kwName ? { ...k, added: true } : k));
 
-    const newScore = atsEngine.analyzeResume(updatedResume, { jobDescription: jd }).finalScore;
-    const delta = newScore - prevScore;
-    showToast(
-      delta > 0
-        ? `Added keyword "${kwName}" to resume (${delta > 0 ? '+' : ''}${delta} ATS points).`
-        : `Added keyword "${kwName}" to resume.`
-    );
-    if (newScore >= 90) triggerConfetti();
+    const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+    const report = await runAnalysis(updatedResume, jd);
+
+    if (report) {
+      showToast(`"${kwName}" added and ATS score recalculated.`);
+    }
   };
 
-  // Add All Keywords — same principle: mutate content, then recompute.
+  // Deliberately does not add every keyword. Users should never be encouraged
+  // to claim skills they do not actually have.
   const handleAddAllKeywords = () => {
-    const unadded = missingKeywords.filter((k) => !k.added);
-    if (unadded.length === 0) return;
-
-    const jd = scanMode === 'jd-match' ? jobDescription : undefined;
-    const addedNames = unadded.map((k) => k.name).join(', ');
-    const updatedResume: ParsedResumeData = {
-      ...previewData,
-      skills: `${previewData.skills}, ${addedNames}`,
-    };
-
-    const prevScore = atsScore;
-    setPreviewData(updatedResume);
-    setImprovedSections((prev) => ({ ...prev, skills: true }));
-    runAnalysis(updatedResume, jd);
-    setMissingKeywords((prev) => prev.map((k) => ({ ...k, added: true })));
-
-    const newScore = atsEngine.analyzeResume(updatedResume, { jobDescription: jd }).finalScore;
-    const delta = newScore - prevScore;
-    showToast(`Added ${unadded.length} missing keywords (only add ones you genuinely have). ${delta > 0 ? `+${delta} ATS points.` : ''}`);
-    if (newScore >= 90) triggerConfetti();
+    showToast('Add only keywords that genuinely match your skills and experience.');
   };
 
   // Auto Fix Issue Handler — this dismisses the flagged issue in the UI.
@@ -616,189 +611,165 @@ Requirements:
     showToast('Issue dismissed. Apply an AI improvement or edit the resume to change your actual ATS score.');
   };
 
-  // Run ATS Scan (engine-driven — no fake API call)
+  // Run ATS Scan — Supabase analyze-resume is the only ATS score authority.
   const handleRunScan = async () => {
     if (gateAiAction()) return;
-    setIsScanning(true);
-    try {
-      // Run the deterministic engine first (always available)
-      const jd = scanMode === 'jd-match' ? jobDescription : undefined;
-      runAnalysis(previewData, jd);
+    if (!hasResumeData) {
+      showToast('Upload a resume before running ATS analysis.');
+      return;
+    }
 
-      // Attempt Gemini server-side enhancement (non-blocking)
-      try {
-        const { supabase, isSupabaseConfigured } = await import('../services/supabaseClient');
-        if (isSupabaseConfigured()) {
-          const { data, error } = await supabase.functions.invoke('analyze-resume', {
-            body: { resumeData: previewData, targetJobDescription: jd },
-          });
-          if (!error && data?.finalScore && data?.categories) {
-            // Gemini result available — update score and categories
-            setAtsScore(data.finalScore);
-            setAtsReport(data as ATSFullReport);
-            const mappedCats = Object.values(data.categories as Record<string, ATSCategoryResult>).map((cat) => ({
-              id: `cat_${cat.key}`,
-              key: cat.key,
-              name: cat.label,
-              score: cat.score,
-              status: cat.score >= 85 ? 'Excellent' : cat.score >= 70 ? 'Good' : cat.score >= 50 ? 'Average' : 'Needs Work',
-              color: cat.score >= 85 ? 'emerald' : cat.score >= 70 ? 'blue' : cat.score >= 50 ? 'amber' : 'red',
-              icon: categoryIconMap[cat.key] || FileText,
-              desc: cat.reason,
-              priority: cat.priority,
-              estimatedAtsGain: cat.estimatedAtsGain,
-              fixSuggestion: cat.fixSuggestion,
-            }));
-            setCategories(mappedCats);
-            const topFixes = (data.topFixes || []) as ATSCategoryResult[];
-            setIssues(topFixes.map((fix, i) => ({
-              id: `iss_${i + 1}`,
-              title: fix.label,
-              type: fix.priority === 'Critical' ? 'critical' : 'warning',
-              category: fix.key,
-              impact: `+${fix.estimatedAtsGain} ATS`,
-              time: fix.estimatedAtsGain >= 8 ? '15 sec' : '30 sec',
-              message: fix.reason,
-              whyRejects: `Scored ${fix.score}/100. ${fix.priority === 'Critical' ? 'ATS systems may reject this.' : 'Reducing overall ATS score.'}`,
-              howToFix: fix.fixSuggestion,
-              beforeText: fix.reason.slice(0, 80),
-              afterText: fix.fixSuggestion.slice(0, 120),
-              fixed: false,
-            })));
-            if (data.missingKeywords?.length) {
-              setMissingKeywords((data.missingKeywords as Array<{ keyword: string; frequency: number; estimatedGain: number }>).map((kw) => ({
-                name: kw.keyword,
-                frequency: kw.frequency * 10,
-                boost: Math.min(6, kw.estimatedGain),
-                added: false,
-              })));
-            }
-          }
-        }
-      } catch {
-        // Gemini enhancement failed — client engine result already shown
-      }
-    } catch (err) {
-      console.warn('ATS scan error:', err);
-    } finally {
-      setIsScanning(false);
+    const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+    const report = await runAnalysis(previewData, jd);
+
+    if (report) {
       showToast(
         scanMode === 'jd-match'
-          ? 'JD-Match ATS scan complete — results updated!'
-          : 'ATS audit complete — 28 categories scored!'
+          ? 'JD Match ATS scan complete — results updated!'
+          : `ATS analysis complete — ${ATS_CRITERIA.length} criteria evaluated!`
       );
+    } else {
+      showToast(atsError || 'ATS analysis failed. Please try again.');
     }
   };
 
-  // AI Action Trigger — uses real improvement engine, NEVER fabricates
-  const handleAiAction = (actionType: string) => {
+  // AI Action Trigger — applies real content changes, then re-runs backend ATS.
+  const handleAiAction = async (actionType: string) => {
     if (gateAiAction()) return;
+
+    const relevantImprovements = aiImprovements.filter(
+      (imp) => imp.section === actionType && !imp.applied
+    );
+
+    if (relevantImprovements.length === 0) {
+      showToast(`No pending improvements found for ${actionType}.`);
+      return;
+    }
+
     setIsScanning(true);
-    setTimeout(() => {
-      setIsScanning(false);
 
-      // Apply all pending improvements of this action type from the real engine
-      const relevantImprovements = aiImprovements.filter(
-        imp => imp.section === actionType && !imp.applied
-      );
+    try {
+      let updatedResume = { ...previewData };
+      relevantImprovements.forEach((imp) => {
+        updatedResume = applyImprovement(updatedResume, imp);
+      });
 
-      if (relevantImprovements.length > 0) {
-        let updatedResume = { ...previewData };
-        relevantImprovements.forEach(imp => {
-          updatedResume = applyImprovement(updatedResume, imp);
-        });
-        const jd = scanMode === 'jd-match' ? jobDescription : undefined;
-        const prevScore = atsScore;
-        setPreviewData(updatedResume);
-        setImprovedSections(prev => ({ ...prev, [actionType]: true }));
-        setAppliedChangesLog(prev => [
-          ...prev,
-          ...relevantImprovements.map(imp => ({ id: imp.id, title: imp.problem, section: imp.section, details: imp.reason })),
-        ]);
-        // Recompute with the real engine on the actually-updated content —
-        // no estimated/fabricated point gain is applied directly.
-        runAnalysis(updatedResume, jd);
-        const newScore = atsEngine.analyzeResume(updatedResume, { jobDescription: jd }).finalScore;
-        showToast(`Applied ${relevantImprovements.length} AI improvements to ${actionType}${newScore !== prevScore ? ` (${newScore > prevScore ? '+' : ''}${newScore - prevScore} ATS)` : ''}.`);
-        if (newScore >= 88) triggerConfetti();
-      } else {
-        // No pending improvements for this section
-        showToast(`No pending improvements found for ${actionType} — section already optimized.`);
+      const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+      setPreviewData(updatedResume);
+      setImprovedSections((prev) => ({ ...prev, [actionType]: true }));
+      setAppliedChangesLog((prev) => [
+        ...prev,
+        ...relevantImprovements.map((imp) => ({
+          id: imp.id,
+          title: imp.problem,
+          section: imp.section,
+          details: imp.reason,
+        })),
+      ]);
+
+      const report = await runAnalysis(updatedResume, jd);
+
+      if (report) {
+        showToast(`Applied ${relevantImprovements.length} AI improvement${relevantImprovements.length === 1 ? '' : 's'} to ${actionType}.`);
+        if (report.finalScore >= 90) triggerConfetti();
       }
-    }, 600);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
-  // Handle individual improvement apply/undo
-  const handleApplyImprovement = (impId: string) => {
+  const handleApplyImprovement = async (impId: string) => {
     if (gateAiAction()) return;
-    const imp = aiImprovements.find(i => i.id === impId);
+
+    const imp = aiImprovements.find((i) => i.id === impId);
     if (!imp || imp.applied) return;
+
     const updated = applyImprovement(previewData, imp);
     const jd = scanMode === 'jd-match' ? jobDescription : undefined;
-    const prevScore = atsScore;
+
     setPreviewData(updated);
-    setImprovedSections(prev => ({ ...prev, [imp.section]: true }));
-    setAppliedChangesLog(prev => [...prev, { id: imp.id, title: imp.problem, section: imp.section, details: imp.reason }]);
-    // Recompute the real score from the updated content instead of adding
-    // the improvement's "expectedAtsGain" estimate directly to the score.
-    runAnalysis(updated, jd);
-    const newScore = atsEngine.analyzeResume(updated, { jobDescription: jd }).finalScore;
-    showToast(`Applied: "${imp.problem}"${newScore !== prevScore ? ` — ${newScore > prevScore ? '+' : ''}${newScore - prevScore} ATS points` : ''}`);
+    setImprovedSections((prev) => ({ ...prev, [imp.section]: true }));
+    setAppliedChangesLog((prev) => [
+      ...prev,
+      {
+        id: imp.id,
+        title: imp.problem,
+        section: imp.section,
+        details: imp.reason,
+      },
+    ]);
+
+    const report = await runAnalysis(updated, jd);
+
+    if (report) {
+      showToast(`Applied: "${imp.problem}" — ATS score recalculated.`);
+    }
   };
 
-  // Automated Full Optimization Flow — applies real AI improvements, no fabrication
-  const handleStartGenerationFlow = () => {
+  // Automated Full Optimization Flow — applies only real improvements and
+  // then asks the backend to calculate the new score.
+  const handleStartGenerationFlow = async () => {
     if (gateAiAction()) return;
+
     setIsGenerating(true);
     setIsGeneratedSuccess(false);
     setGenerationProgress(0);
 
-    const pendingImprovements = aiImprovements.filter(i => !i.applied);
+    const pendingImprovements = aiImprovements.filter((i) => !i.applied);
 
     const steps = [
       { p: 20, text: 'Analyzing Skills & Keyword Gaps...' },
       { p: 45, text: 'Improving Action Verbs & Sentence Structure...' },
-      { p: 70, text: 'Applying STAR Format Improvements...' },
-      { p: 88, text: 'Formatting Skills for ATS Parsing...' },
-      { p: 100, text: `Optimization complete — applying ${pendingImprovements.length} improvements...` },
+      { p: 70, text: 'Applying Resume Improvements...' },
+      { p: 88, text: 'Rechecking ATS Compatibility...' },
     ];
-    setGenerationStepText(steps[0].text);
 
-    let currentIdx = 0;
-    const interval = setInterval(() => {
-      if (currentIdx < steps.length) {
-        setGenerationProgress(steps[currentIdx].p);
-        setGenerationStepText(steps[currentIdx].text);
-        currentIdx++;
-      } else {
-        clearInterval(interval);
-        setIsGenerating(false);
-        setIsGeneratedSuccess(true);
-        triggerConfetti();
-
-        // Apply ALL pending improvements from the real engine (no fabrication)
-        if (pendingImprovements.length > 0) {
-          let updatedResume = { ...previewData };
-          pendingImprovements.forEach(imp => {
-            updatedResume = applyImprovement(updatedResume, imp);
-          });
-          const jd = scanMode === 'jd-match' ? jobDescription : undefined;
-          setPreviewData(updatedResume);
-          setImprovedSections({ summary: true, skills: true, experience: true, projects: true });
-          setAppliedChangesLog(prev => [
-            ...prev,
-            ...pendingImprovements.map(imp => ({ id: imp.id, title: imp.problem, section: imp.section, details: imp.reason })),
-          ]);
-          // Recompute the real score/report on the actually-updated resume —
-          // never a capped/fabricated projection.
-          runAnalysis(updatedResume, jd);
-          setMissingKeywords(prev => prev.map(k => ({ ...k, added: true })));
-          setIssues(prev => prev.map(i => ({ ...i, fixed: true })));
-        }
-
-        setTimeout(() => handleNavigateToResumeBuilder(), 1200);
+    try {
+      for (const step of steps) {
+        setGenerationProgress(step.p);
+        setGenerationStepText(step.text);
+        await new Promise((resolve) => setTimeout(resolve, 450));
       }
-    }, 450);
+
+      if (pendingImprovements.length > 0) {
+        let updatedResume = { ...previewData };
+        pendingImprovements.forEach((imp) => {
+          updatedResume = applyImprovement(updatedResume, imp);
+        });
+
+        const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+        setPreviewData(updatedResume);
+        setImprovedSections({ summary: true, skills: true, experience: true, projects: true });
+        setAppliedChangesLog((prev) => [
+          ...prev,
+          ...pendingImprovements.map((imp) => ({
+            id: imp.id,
+            title: imp.problem,
+            section: imp.section,
+            details: imp.reason,
+          })),
+        ]);
+
+        setGenerationProgress(100);
+        setGenerationStepText('Optimization complete — recalculating ATS score...');
+
+        const report = await runAnalysis(updatedResume, jd);
+
+        if (report) {
+          setIsGeneratedSuccess(true);
+          triggerConfetti();
+          setTimeout(() => handleNavigateToResumeBuilder(), 1200);
+          return;
+        }
+      } else {
+        setGenerationProgress(100);
+        setGenerationStepText('No pending changes — resume is already optimized.');
+        setIsGeneratedSuccess(true);
+        setTimeout(() => handleNavigateToResumeBuilder(), 800);
+      }
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleNavigateToResumeBuilder = () => {
@@ -889,7 +860,7 @@ Requirements:
               Upload Your Resume for ATS Analysis
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 max-w-xl mx-auto leading-relaxed">
-              Scan your resume against 28 deterministic enterprise ATS categories (Workday, Greenhouse, Lever, Ashby) to identify keyword gaps, formatting issues, and score improvements.
+              Analyze your resume across 8 ATS criteria to identify content, structure, formatting, skills, and keyword issues.
             </p>
           </div>
 
@@ -971,7 +942,7 @@ Requirements:
               ATS Analysis & Optimization
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              Auditing <span className="font-bold text-[#0B192C]">{currentResumeName}</span> against enterprise Applicant Tracking Systems (Workday, Greenhouse, Lever, Ashby).
+              Analyzing <span className="font-bold text-[#0B192C]">{currentResumeName}</span> across 8 ATS criteria.
             </p>
           </div>
 
@@ -1050,7 +1021,7 @@ Requirements:
               CATEGORIES SCORED
             </span>
             <div className="flex items-center gap-1.5">
-              <span className="text-xl font-black text-blue-900 font-mono">28</span>
+              <span className="text-xl font-black text-blue-900 font-mono">{ATS_CRITERIA.length}</span>
               <span className="text-[10px] font-extrabold text-blue-700 bg-blue-100 border border-blue-200 px-1.5 py-0.2 rounded-md">
                 Dimensions
               </span>
@@ -1063,7 +1034,7 @@ Requirements:
             </span>
             <span className="text-xs font-bold text-emerald-800 flex items-center gap-1 mt-1">
               <CheckCircle size={13} className="text-emerald-600" />
-              {(atsReport ? (Object.values(atsReport.categories) as ATSCategoryResult[]).filter((c) => c.passed).length : 0)}/28
+              {categories.filter((c) => c.score >= 70).length}/{ATS_CRITERIA.length}
             </span>
           </div>
 
@@ -1091,7 +1062,7 @@ Requirements:
               ENGINE
             </span>
             <span className="text-xs font-bold text-blue-800 font-mono mt-1 block">
-              {atsReport?.analysisSource === 'claude' || atsReport?.analysisSource === 'gemini' ? '✦ Claude 3.5 Sonnet' : '⚡ Client Engine'}
+              {atsReport?.analysisSource ? '✦ AI Analysis' : '—'}
             </span>
           </div>
         </div>
@@ -1204,41 +1175,25 @@ Requirements:
             {/* Score Gain Pills — real computed projected score */}
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs font-bold max-w-xs mx-auto">
               <div className="flex items-center gap-1.5 text-slate-600">
-                <span>Projected Post-Fix:</span>
-                <span className="text-emerald-700 font-mono font-black">{projectedScore}/100</span>
+                <ShieldCheck size={14} className="text-blue-600" />
+                <span>Current verified score:</span>
               </div>
-              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-md font-mono text-[11px]">
-                +{Math.max(0, projectedScore - atsScore)} ATS Gain
-              </span>
+              <span className="text-[#0B192C] font-mono font-black">{atsScore}/100</span>
             </div>
           </div>
 
-          {/* PASSED ENTERPRISE SYSTEMS */}
+          {/* ATS COMPATIBILITY NOTE */}
           <div className="space-y-3">
             <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest block">
-              APPLICANT TRACKING SYSTEM COMPATIBILITY
+              ATS COMPATIBILITY
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {[
-                { name: 'Workday', pass: atsScore >= 55 },
-                { name: 'Greenhouse', pass: atsScore >= 50 },
-                { name: 'Lever', pass: atsScore >= 50 },
-                { name: 'Ashby', pass: atsScore >= 60 },
-                { name: 'Taleo', pass: atsScore >= 65 },
-                { name: 'iCIMS', pass: atsScore >= 60 },
-              ].map((sys) => (
-                <div
-                  key={sys.name}
-                  className={`px-3 py-2 border rounded-xl text-xs font-bold flex items-center justify-between shadow-2xs ${
-                    sys.pass ? 'bg-slate-50 border-slate-200/80 text-[#0B192C]' : 'bg-red-50/40 border-red-200/60 text-red-900'
-                  }`}
-                >
-                  <span className="truncate">{sys.name}</span>
-                  {sys.pass
-                    ? <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                    : <AlertTriangle size={14} className="text-red-500 shrink-0" />}
-                </div>
-              ))}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck size={18} className="text-blue-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  This score estimates resume parsing and content compatibility. Actual ATS behavior varies by employer configuration. HireFlow does not guarantee a pass for any specific ATS vendor.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -1399,7 +1354,7 @@ Requirements:
                 <h3 className="text-xl font-bold text-[#0B192C] tracking-tight">{previewData.personalInfo?.fullName || 'Sahil Nagpal'}</h3>
                 <p className="text-xs font-semibold text-blue-700">{previewData.personalInfo?.jobTitle || 'Senior Software Engineer'}</p>
                 <p className="text-[11px] text-slate-500 font-mono">
-                  {previewData.personalInfo?.email || 'nagpal.sahil01@gmail.com'} &middot; {previewData.personalInfo?.phone || '(+91) 9923278283'}
+                  {previewData.personalInfo?.email || 'No email detected'} &middot; {previewData.personalInfo?.phone || 'No phone detected'}
                 </p>
               </div>
 
@@ -1508,7 +1463,7 @@ Requirements:
                 <span>AI-Improved Version (Same Resume, ATS Optimized)</span>
               </span>
               <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold rounded">
-                Score: {projectedScore} (+{Math.max(0, projectedScore - atsScore)} Gain)
+                Score: {atsScore}
               </span>
             </div>
 
@@ -1634,8 +1589,8 @@ Requirements:
             Ready to Optimize Your ATS-Scored Resume?
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
-            Your resume scored <span className="font-bold text-[#0B192C]">{atsScore}/100</span> across 28 ATS dimensions.
-            Fix the top issues identified by the engine to reach your target score.
+            Your resume scored <span className="font-bold text-[#0B192C]">{atsScore}/100</span> across {ATS_CRITERIA.length} ATS criteria.
+            Review the prioritized issues and improve only information that is truthful and relevant.
           </p>
         </div>
 
@@ -1650,14 +1605,12 @@ Requirements:
 
           <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl text-center space-y-1">
             <span className="font-mono text-xs font-bold text-blue-800 uppercase tracking-widest block">
-              POTENTIAL SCORE
+              CRITERIA ANALYZED
             </span>
             <div className="text-4xl font-black text-blue-900 font-mono">
-              {Math.min(100, atsScore + (atsReport?.topFixes.reduce((s, f) => s + f.estimatedAtsGain, 0) ?? 0))}
+              {ATS_CRITERIA.length}
             </div>
-            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-xs rounded-full inline-block mt-1">
-              +{atsReport?.topFixes.reduce((s, f) => s + f.estimatedAtsGain, 0) ?? 0} ATS Gain
-            </span>
+            <span className="text-xs text-blue-700 block mt-1">Backend ATS criteria</span>
           </div>
 
           <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center space-y-1">

@@ -27,7 +27,7 @@ const PROD_TEST_RESUME: ParsedResumeData = {
   personalInfo: {
     fullName: 'Bhavesh Kumawat',
     jobTitle: 'Frontend Engineer',
-    email: [EMAIL_ADDRESS],
+    email: EMAIL_ADDRESS,
     phone: '+91 98765 43210',
     linkedin: '',
     location: 'Mumbai, India',

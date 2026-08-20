@@ -27,12 +27,14 @@ const SAMPLE_FRESHER_RESUME: ParsedResumeData = {
     jobTitle: 'Junior Developer',
     email: 'alex@university.edu',
     phone: '+1 555 111 2222',
+    location: 'San Francisco, CA',
     summary: 'CS Graduate looking for entry-level software developer roles.',
   },
   skills: 'Python, Java, Git, HTML/CSS',
   experiences: [],
   education: [{ id: 'e1', degree: 'B.S. CS', institution: 'State University', period: '2020 - 2024' }],
-  projects: [{ id: 'p1', title: 'Campus Event App', techStack: ['React', 'Node.js'], bullets: ['Built campus app.'] }],
+  projects: [{ id: 'p1', title: 'Campus Event App', description: 'Campus Event App built with React and Node.js', techStack: ['React', 'Node.js'], bullets: ['Built campus app.'] }],
+  certificates: [],
 };
 
 const SAMPLE_EXPERIENCED_RESUME: ParsedResumeData = {
@@ -44,6 +46,7 @@ const SAMPLE_EXPERIENCED_RESUME: ParsedResumeData = {
     jobTitle: 'Senior Software Engineer',
     email: 'jane.senior@example.com',
     phone: '+1 555 999 8888',
+    location: 'San Francisco, CA',
     summary: 'Senior Engineer with 8+ years experience building distributed systems.',
   },
   skills: 'React, TypeScript, Go, PostgreSQL, AWS',
@@ -52,6 +55,7 @@ const SAMPLE_EXPERIENCED_RESUME: ParsedResumeData = {
   ],
   education: [{ id: 'e1', degree: 'B.S. CS', institution: 'MIT', period: '2012 - 2016' }],
   projects: [],
+  certificates: [],
 };
 
 export async function runDashboardHistoryTests(): Promise<{ total: number; passed: number; results: string[] }> {

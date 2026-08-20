@@ -603,8 +603,8 @@ Requirements:
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {jdAnalysis.requiredSkills.slice(0, 9).map((gap) => {
-                  const resumeText = JSON.stringify(activeResumeData).toLowerCase();
-                  const isFound = textContainsTerm(resumeText, gap.skill);
+                  const resumeText = JSON.stringify(activeResumeData || {}).toLowerCase();
+                  const isFound = resumeText.includes((gap.skill || '').toLowerCase());
                   return (
                     <div
                       key={gap.skill}

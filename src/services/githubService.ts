@@ -191,11 +191,14 @@ export async function validateUser(username: string): Promise<GitHubUserProfile>
   const data = await githubFetch<any>(`${GITHUB_API}/users/${encodeURIComponent(username)}`);
   return {
     login: data.login,
-    name: data.name,
+    name: data.name || null,
     avatar_url: data.avatar_url,
-    bio: data.bio,
-    public_repos: data.public_repos,
-    followers: data.followers,
+    bio: data.bio || null,
+    location: data.location || null,
+    blog: data.blog || null,
+    website: data.blog || null,
+    public_repos: data.public_repos || 0,
+    followers: data.followers || 0,
     html_url: data.html_url,
   };
 }
@@ -203,7 +206,6 @@ export async function validateUser(username: string): Promise<GitHubUserProfile>
 /**
  * Fetch all public repositories for a user.
  * Automatically paginates to get all repos.
- * Ignores forks by default.
  */
 export async function fetchRepos(
   username: string,
@@ -221,8 +223,11 @@ export async function fetchRepos(
     if (!data || data.length === 0) break;
 
     for (const repo of data) {
-      // Skip forks if not included
       if (repo.fork && !options.includeForks) continue;
+
+      const size = repo.size || 0;
+      const isEmpty = size === 0;
+      const homepage = repo.homepage && repo.homepage.trim() ? repo.homepage.trim() : null;
 
       allRepos.push({
         id: `gh_${repo.id}`,
@@ -232,14 +237,17 @@ export async function fetchRepos(
         forks: repo.forks_count || 0,
         language: repo.language || '',
         topics: repo.topics || [],
-        updatedAt: formatRelativeDate(repo.updated_at),
+        updatedAt: formatRelativeDate(repo.updated_at || repo.pushed_at),
         url: repo.html_url,
+        homepage,
+        size,
+        isEmpty,
         selected: false,
         isFork: repo.fork,
         isArchived: repo.archived,
         isPractice: detectPracticeRepo(repo.name, repo.description),
         defaultBranch: repo.default_branch || 'main',
-      } as GitHubRepoItem & { isFork?: boolean; isArchived?: boolean; isPractice?: boolean; defaultBranch?: string });
+      });
     }
 
     if (data.length < perPage) break;

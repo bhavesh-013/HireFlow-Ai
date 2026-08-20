@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { buildClaudeSystemPrompt } from '../_shared/ai-prompts.ts';
-import { callClaudeApi, parseJsonFromClaude } from '../_shared/claude-client.ts';
+import { buildGeminiSystemPrompt } from '../_shared/ai-prompts.ts';
+import { callGeminiApi, parseJsonFromGemini } from '../_shared/gemini-client.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,7 +15,7 @@ serve(async (req) => {
   try {
     const { title, company, bullets, targetRole } = await req.json();
 
-    const featureTask = `You are a senior technical resume writer powered by Claude specializing in experience bullet points.
+    const featureTask = `You are a senior technical resume writer powered by Gemini 2.0 Flash specializing in experience bullet points.
 Target role: "${targetRole || 'Software Engineer'}"
 Position: "${title || 'Engineer'}" at "${company || 'Company'}"
 
@@ -31,20 +31,20 @@ Instructions:
   "suggestedMetrics": ["suggested metric area to quantify (e.g. latency, user count)"]
 }`;
 
-    const systemPrompt = buildClaudeSystemPrompt(featureTask, jsonSchema);
+    const systemPrompt = buildGeminiSystemPrompt(featureTask, jsonSchema);
     const userPrompt = `Current experience bullets:
 ${(bullets || []).map((b: string, i: number) => `${i + 1}. ${b}`).join('\n') || 'No bullets provided. Provide 3 template bullet structures using [X]% placeholders for this role.'}
 
 Rewrite and improve these bullets strictly following the no-fabrication and metric placeholder rules.`;
 
-    const text = await callClaudeApi({
+    const text = await callGeminiApi({
       systemPrompt,
       userPrompt,
       temperature: 0.2,
       maxTokens: 2048,
     });
 
-    const parsed = parseJsonFromClaude(text);
+    const parsed = parseJsonFromGemini(text);
 
     return new Response(JSON.stringify({ success: true, ...parsed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

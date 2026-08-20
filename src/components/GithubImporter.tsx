@@ -28,12 +28,23 @@ import {
   Info,
   UserCheck
 } from 'lucide-react';
-import { GitHubRepoItem, ParsedResumeData, SkillCategoryItem } from '../types';
-import { mockGithubRepos } from '../data/mockData';
+import { GitHubRepoItem, ParsedResumeData, SkillCategoryItem, GitHubUserProfile } from '../types';
+import { githubService } from '../services/githubService';
+import { skillExtractor } from '../services/skillExtractor';
+
+/** Maps the free-form category strings produced by skillExtractor onto the
+ * fixed set of buckets this UI renders. Anything it doesn't recognize
+ * (e.g. "Languages") falls back to "Tools" rather than being dropped. */
+function normalizeSkillCategory(raw?: string): SkillCategoryType {
+  const known: SkillCategoryType[] = [
+    'Frontend', 'Backend', 'Database', 'DevOps', 'Cloud', 'AI/ML', 'Mobile', 'Testing', 'Tools',
+  ];
+  return (known as string[]).includes(raw || '') ? (raw as SkillCategoryType) : 'Tools';
+}
 
 export interface GithubImporterProps {
   onConfirmImport: (parsedResume: ParsedResumeData) => void;
-  mockUser: {
+  currentUser: {
     name: string;
     email: string;
     phone: string;
@@ -67,79 +78,30 @@ const SKILL_CATEGORIES: { category: SkillCategoryType; label: string; icon: Reac
   { category: 'Tools', label: 'Tools', icon: <Wrench size={16} />, color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
 ];
 
-export const GithubImporter: React.FC<GithubImporterProps> = ({ onConfirmImport, mockUser }) => {
-  // State for GitHub Connection
-  const [githubConnected, setGithubConnected] = useState(true);
-  const [githubUsername, setGithubUsername] = useState('alexkumar-dev');
+export const GithubImporter: React.FC<GithubImporterProps> = ({ onConfirmImport, currentUser }) => {
+  // GitHub connection state — starts disconnected; only flips to true after
+  // a real fetch succeeds. Never assume the user is connected by default.
+  const [githubConnected, setGithubConnected] = useState(false);
+  const [githubUsername, setGithubUsername] = useState(currentUser.github?.replace(/^https?:\/\/(www\.)?github\.com\//, '') || '');
   const [isFetchingRepos, setIsFetchingRepos] = useState(false);
-  const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [showPatInput, setShowPatInput] = useState(false);
+  const [patToken, setPatToken] = useState('');
 
-  // Authenticated GitHub Profile details
-  const [userProfile] = useState({
-    name: 'Alex Kumar',
-    username: 'alexkumar-dev',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    bio: 'Senior Software Engineer & Open Source Contributor. Building high-performance web applications & AI tools.',
-    publicRepos: 24,
-    followers: 482,
-    starsTotal: 3340,
-    githubUrl: 'https://github.com/alexkumar-dev',
-  });
+  // Authenticated GitHub Profile details — populated only from a real
+  // githubService.validateUser() response, never a hardcoded person.
+  const [userProfile, setUserProfile] = useState<GitHubUserProfile | null>(null);
 
-  // Repositories State
-  const [repos, setRepos] = useState<GitHubRepoItem[]>(mockGithubRepos);
+  // Repositories State — starts empty; populated by a real fetch.
+  const [repos, setRepos] = useState<GitHubRepoItem[]>([]);
   const [repoSearch, setRepoSearch] = useState('');
-  const [expandedRepoId, setExpandedRepoId] = useState<string | null>('gh_1');
+  const [expandedRepoId, setExpandedRepoId] = useState<string | null>(null);
 
-  // Categorized Skills State extracted from repos
-  const initialSkillItems: SkillCategoryItem[] = useMemo(() => {
-    const defaultSkills: SkillCategoryItem[] = [
-      // Frontend
-      { id: 'sk_1', name: 'React 18', category: 'Frontend', selected: true },
-      { id: 'sk_2', name: 'TypeScript', category: 'Frontend', selected: true },
-      { id: 'sk_3', name: 'Next.js 14', category: 'Frontend', selected: true },
-      { id: 'sk_4', name: 'Tailwind CSS', category: 'Frontend', selected: true },
-      { id: 'sk_5', name: 'HTML5/CSS3', category: 'Frontend', selected: true },
-      { id: 'sk_6', name: 'Zustand', category: 'Frontend', selected: true },
-      { id: 'sk_7', name: 'HTML5 Canvas API', category: 'Frontend', selected: true },
-      // Backend
-      { id: 'sk_8', name: 'Node.js', category: 'Backend', selected: true },
-      { id: 'sk_9', name: 'Express.js', category: 'Backend', selected: true },
-      { id: 'sk_10', name: 'Python', category: 'Backend', selected: true },
-      { id: 'sk_11', name: 'GraphQL', category: 'Backend', selected: true },
-      { id: 'sk_12', name: 'REST APIs', category: 'Backend', selected: true },
-      // Database
-      { id: 'sk_13', name: 'PostgreSQL', category: 'Database', selected: true },
-      { id: 'sk_14', name: 'Redis', category: 'Database', selected: true },
-      { id: 'sk_15', name: 'Prisma ORM', category: 'Database', selected: true },
-      // DevOps
-      { id: 'sk_16', name: 'Docker', category: 'DevOps', selected: true },
-      { id: 'sk_17', name: 'GitHub Actions (CI/CD)', category: 'DevOps', selected: true },
-      { id: 'sk_18', name: 'Terraform', category: 'DevOps', selected: true },
-      { id: 'sk_19', name: 'Kubernetes (GKE)', category: 'DevOps', selected: true },
-      // Cloud
-      { id: 'sk_20', name: 'Vercel', category: 'Cloud', selected: true },
-      { id: 'sk_21', name: 'AWS Cloud Run', category: 'Cloud', selected: true },
-      { id: 'sk_22', name: 'Google Cloud Platform', category: 'Cloud', selected: true },
-      // AI / ML
-      { id: 'sk_23', name: 'Gemini AI API', category: 'AI/ML', selected: true },
-      { id: 'sk_24', name: 'PyTorch', category: 'AI/ML', selected: true },
-      { id: 'sk_25', name: 'SpaCy / NLP', category: 'AI/ML', selected: true },
-      // Mobile
-      { id: 'sk_26', name: 'React Native', category: 'Mobile', selected: true },
-      // Testing
-      { id: 'sk_27', name: 'Jest', category: 'Testing', selected: true },
-      { id: 'sk_28', name: 'Playwright', category: 'Testing', selected: true },
-      { id: 'sk_29', name: 'Cypress', category: 'Testing', selected: true },
-      // Tools
-      { id: 'sk_30', name: 'Git', category: 'Tools', selected: true },
-      { id: 'sk_31', name: 'Vite', category: 'Tools', selected: true },
-      { id: 'sk_32', name: 'npm / pnpm', category: 'Tools', selected: true },
-    ];
-    return defaultSkills;
-  }, []);
-
-  const [skills, setSkills] = useState<SkillCategoryItem[]>(initialSkillItems);
+  // Skills start empty. They're either added manually or generated for real
+  // by scanning the selected repos' dependency files (see handleAnalyzeSkills)
+  // — never seeded with someone else's fixed tech stack.
+  const [skills, setSkills] = useState<SkillCategoryItem[]>([]);
+  const [isAnalyzingSkills, setIsAnalyzingSkills] = useState(false);
 
   // New Skill Input states per category
   const [newSkillText, setNewSkillText] = useState<{ [cat in SkillCategoryType]?: string }>({});
@@ -197,15 +159,87 @@ export const GithubImporter: React.FC<GithubImporterProps> = ({ onConfirmImport,
     setEditingSkillName('');
   };
 
-  // Fetch repositories simulated
-  const handleFetchGithubUser = (e: React.FormEvent) => {
+  // Fetch real repositories and profile from GitHub's public API.
+  const handleFetchGithubUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!githubUsername.trim()) return;
+    const handle = githubUsername.trim();
+    if (!handle) return;
     setIsFetchingRepos(true);
-    setTimeout(() => {
-      setIsFetchingRepos(false);
+    setFetchError(null);
+    try {
+      const [profile, fetchedRepos] = await Promise.all([
+        githubService.validateUser(handle),
+        githubService.fetchRepos(handle, { includeForks: true }),
+      ]);
+      setUserProfile(profile);
+      // Default-select non-fork, non-empty, non-archived repos — mirrors
+      // the same heuristic used by the GitHub Import Modal elsewhere.
+      const withDefaults = fetchedRepos.map((r) => ({
+        ...r,
+        selected: !r.isFork && !r.isEmpty && !r.isArchived,
+      }));
+      setRepos(withDefaults.some((r) => r.selected) ? withDefaults : fetchedRepos.map((r) => ({ ...r, selected: !r.isEmpty })));
       setGithubConnected(true);
-    }, 600);
+      setSkills([]); // Clear any skills from a previous user's repos
+    } catch (err: any) {
+      setFetchError(err?.message || `Could not fetch repositories for "${handle}".`);
+      setGithubConnected(false);
+    } finally {
+      setIsFetchingRepos(false);
+    }
+  };
+
+  const handleSavePat = () => {
+    githubService.setGitHubPAT(patToken.trim() || null);
+    setShowPatInput(false);
+    if (githubUsername.trim()) {
+      handleFetchGithubUser({ preventDefault: () => {} } as React.FormEvent);
+    }
+  };
+
+  // Scans the currently-selected repos' real dependency manifests (package.json,
+  // requirements.txt, Dockerfile, etc.) and derives skills from what's actually
+  // there — the same extraction logic used by the GitHub Import Modal pipeline.
+  const handleAnalyzeSkills = async () => {
+    const targets = repos.filter((r) => r.selected);
+    if (targets.length === 0) {
+      alert('Select at least one repository first.');
+      return;
+    }
+    setIsAnalyzingSkills(true);
+    try {
+      const analyses: Array<{ repo: GitHubRepoItem; skills: import('../types').ExtractedSkill[] }> = [];
+      for (const repo of targets) {
+        const owner = repo.url.split('/')[3] || githubUsername;
+        const branch = (repo as any).defaultBranch || 'main';
+        let cached = githubService.getCachedRepoData(repo.id);
+        let tree = cached?.tree;
+        let files = cached?.files;
+        if (!files) {
+          tree = await githubService.fetchRepoTree(owner, repo.name, branch);
+          files = await githubService.fetchImportantFiles(owner, repo.name, tree || []);
+          githubService.setCachedRepoData(repo.id, tree || [], files);
+        }
+        const rawSkills = skillExtractor.extractSkillsFromRepo(repo, files, tree);
+        analyses.push({ repo, skills: rawSkills });
+      }
+      const aggregated = skillExtractor.aggregateExtractedSkills(analyses);
+      const mapped: SkillCategoryItem[] = aggregated.map((s, i) => ({
+        id: `sk_${Date.now()}_${i}`,
+        name: s.name,
+        category: normalizeSkillCategory(s.category),
+        selected: true,
+        sourceRepo: s.sourceRepo,
+      }));
+      setSkills(mapped);
+      if (mapped.length === 0) {
+        alert('No recognizable technologies were found in the selected repos\u2019 dependency files. You can still add skills manually below.');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Could not analyze the selected repositories. You can still add skills manually below.');
+    } finally {
+      setIsAnalyzingSkills(false);
+    }
   };
 
   // Computed properties for filtered repos
@@ -289,45 +323,25 @@ export const GithubImporter: React.FC<GithubImporterProps> = ({ onConfirmImport,
     });
     const formattedSkillsString = formattedSkillsArray.join(' | ');
 
-    // Build complete ParsedResumeData
+    // Build complete ParsedResumeData - NO FAKE WORK EXPERIENCE!
     const parsedGithubResume: ParsedResumeData = {
-      title: `GitHub_Resume_${userProfile.username}.pdf`,
-      targetRole: 'Senior Full Stack & Open Source Engineer',
+      title: `GitHub_Resume_${userProfile?.login || githubUsername}.pdf`,
+      targetRole: 'Full Stack Engineer & Open Source Developer',
       templateName: 'Modern Tech Stack',
       importSource: 'github',
       personalInfo: {
-        fullName: mockUser.name || userProfile.name,
-        jobTitle: 'Senior Full Stack & Open Source Engineer',
-        email: mockUser.email,
-        phone: mockUser.phone,
-        location: mockUser.location,
-        website: mockUser.website,
-        github: userProfile.githubUrl,
-        linkedin: mockUser.linkedin,
-        summary: `Open Source Engineer with ${selectedRepos.length} highlighted GitHub repositories (${selectedRepos.reduce((acc, r) => acc + r.stars, 0)} total stars). Specialized in ${activeSkills.slice(0, 8).map(s => s.name).join(', ')}.`,
+        fullName: userProfile?.name || currentUser.name || userProfile?.login || '',
+        jobTitle: 'Full Stack & Open Source Software Engineer',
+        email: currentUser.email || '',
+        phone: currentUser.phone || '',
+        location: userProfile?.location || currentUser.location || '',
+        website: userProfile?.blog || userProfile?.website || currentUser.website || '',
+        github: userProfile?.html_url || `https://github.com/${userProfile?.login || githubUsername}`,
+        linkedin: currentUser.linkedin || '',
+        summary: userProfile?.bio || `Software engineer with ${selectedRepos.length} public GitHub repositories. Specialized in ${activeSkills.slice(0, 6).map(s => s.name).join(', ')}.`,
       },
-      experiences: [
-        {
-          id: `exp_gh_main`,
-          title: 'Senior Open Source Contributor',
-          company: 'GitHub / Independent',
-          period: '2021 - Present',
-          location: mockUser.location,
-          bullets: [
-            `Maintained ${selectedRepos.length} production-ready technical repositories accumulating over ${selectedRepos.reduce((acc, r) => acc + r.stars, 0)} stars.`,
-            `Architected modular software solutions using ${activeSkills.slice(0, 5).map(s => s.name).join(', ')}.`,
-            `Established automated CI/CD testing and Dockerized deployment workflows across public repositories.`,
-          ],
-        },
-      ],
-      education: [
-        {
-          id: `edu_gh_1`,
-          degree: 'B.S. in Computer Science',
-          institution: 'UC Berkeley',
-          period: '2016 - 2020',
-        },
-      ],
+      experiences: [], // NEVER convert GitHub projects into fake work experience!
+      education: [],
       skills: formattedSkillsString,
       projects: parsedProjects,
       certificates: [],
@@ -339,65 +353,82 @@ export const GithubImporter: React.FC<GithubImporterProps> = ({ onConfirmImport,
   return (
     <div className="space-y-8">
       {/* ------------------------------------------------------------------- */}
-      {/* OAUTH AUTHENTICATED PROFILE & SYNC BAR */}
+      {/* PROFILE & SYNC BAR */}
       {/* ------------------------------------------------------------------- */}
       <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-2xs space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-100">
-          {/* User Profile Info */}
-          <div className="flex items-start gap-4">
-            <div className="relative">
-              <img
-                src={userProfile.avatarUrl}
-                alt={userProfile.name}
-                className="w-16 h-16 rounded-2xl object-cover ring-4 ring-slate-100 shadow-sm"
-              />
-              <span className="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-1 border-2 border-white shadow-xs">
-                <Check size={12} className="stroke-[3]" />
-              </span>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-xl font-black text-[#0B192C]">{userProfile.name}</h2>
-                <span className="text-xs font-mono text-slate-500">@{userProfile.username}</span>
-                <span className="bg-emerald-100 text-emerald-800 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                  <UserCheck size={13} className="text-emerald-600" />
-                  <span>GitHub OAuth Connected</span>
+        {githubConnected && userProfile ? (
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-100">
+            {/* User Profile Info */}
+            <div className="flex items-start gap-4">
+              <div className="relative">
+                <img
+                  src={userProfile.avatar_url}
+                  alt={userProfile.name || userProfile.login}
+                  className="w-16 h-16 rounded-2xl object-cover ring-4 ring-slate-100 shadow-sm"
+                />
+                <span className="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-1 border-2 border-white shadow-xs">
+                  <Check size={12} className="stroke-[3]" />
                 </span>
               </div>
 
-              <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
-                {userProfile.bio}
-              </p>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-xl font-black text-[#0B192C]">{userProfile.name || userProfile.login}</h2>
+                  <span className="text-xs font-mono text-slate-500">@{userProfile.login}</span>
+                  <span className="bg-emerald-100 text-emerald-800 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <UserCheck size={13} className="text-emerald-600" />
+                    <span>Repositories Loaded</span>
+                  </span>
+                </div>
 
-              <div className="flex items-center gap-4 text-xs font-mono font-bold text-slate-500 pt-1">
-                <span>📁 {userProfile.publicRepos} Public Repos</span>
-                <span>⭐ {userProfile.starsTotal.toLocaleString()} Total Stars</span>
-                <span>👥 {userProfile.followers} Followers</span>
-                <a
-                  href={userProfile.githubUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue-600 hover:underline flex items-center gap-1 font-sans"
-                >
-                  <span>View GitHub</span>
-                  <ExternalLink size={12} />
-                </a>
+                {userProfile.bio && (
+                  <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
+                    {userProfile.bio}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-4 text-xs font-mono font-bold text-slate-500 pt-1">
+                  <span>📁 {userProfile.public_repos} Public Repos</span>
+                  <span>👥 {userProfile.followers} Followers</span>
+                  <a
+                    href={userProfile.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline flex items-center gap-1 font-sans"
+                  >
+                    <span>View GitHub</span>
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Sync / Switch User */}
-          <div className="flex flex-col sm:flex-row gap-3 shrink-0">
-            <button
-              onClick={() => setShowOAuthModal(true)}
-              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-[#0B192C] rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Github size={15} />
-              <span>Re-authenticate OAuth</span>
-            </button>
+            {/* PAT / rate-limit settings */}
+            <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+              <button
+                onClick={() => setShowPatInput(true)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-[#0B192C] rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+                title="Configure a GitHub Personal Access Token for higher rate limits"
+              >
+                <Github size={15} />
+                <span>GitHub Access Token</span>
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="pb-6 border-b border-slate-100 space-y-1">
+            <h2 className="text-lg font-black text-[#0B192C]">Connect a GitHub account</h2>
+            <p className="text-xs text-slate-500">
+              Enter a public GitHub username to pull real repositories, dependency files, and README content — nothing here is pre-filled or simulated.
+            </p>
+          </div>
+        )}
+
+        {fetchError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+            ⚠️ {fetchError}
+          </div>
+        )}
 
         {/* Username Search Input Bar */}
         <form onSubmit={handleFetchGithubUser} className="flex flex-col sm:flex-row gap-3">
@@ -641,17 +672,40 @@ export const GithubImporter: React.FC<GithubImporterProps> = ({ onConfirmImport,
               <span className="bg-purple-100 text-purple-800 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md">
                 STEP 2: REVIEW & CATEGORIZE SKILLS
               </span>
-              <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">
-                9 Categories Auto-Populated ({activeSkills.length} Selected Skills)
-              </span>
+              {skills.length > 0 && (
+                <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">
+                  {activeSkills.length} Selected Skills
+                </span>
+              )}
             </div>
             <h3 className="font-black text-lg text-[#0B192C] mt-1">
-              Categorized Technical Skills Extracted from GitHub Repos
+              Technical Skills
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Review, edit, add custom skills, or deselect skills before importing them into your resume editor.
+              {skills.length > 0
+                ? 'Review, edit, add custom skills, or deselect skills before importing them into your resume editor.'
+                : 'Scan your selected repositories\u2019 real dependency files (package.json, requirements.txt, Dockerfile, etc.) to detect skills, or add them manually below.'}
             </p>
           </div>
+
+          <button
+            type="button"
+            onClick={handleAnalyzeSkills}
+            disabled={isAnalyzingSkills || selectedCount === 0}
+            className="shrink-0 px-4 py-2.5 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+          >
+            {isAnalyzingSkills ? (
+              <>
+                <RefreshCw size={14} className="animate-spin" />
+                <span>Scanning Dependency Files...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} />
+                <span>{skills.length > 0 ? 'Re-scan Selected Repos' : 'Scan Selected Repos for Skills'}</span>
+              </>
+            )}
+          </button>
         </div>
 
         {/* 9 Categories Grid */}
@@ -839,9 +893,12 @@ export const GithubImporter: React.FC<GithubImporterProps> = ({ onConfirmImport,
       </div>
 
       {/* ------------------------------------------------------------------- */}
-      {/* SIMULATED OAUTH RE-AUTHENTICATION MODAL */}
+      {/* GITHUB PERSONAL ACCESS TOKEN MODAL — real, optional, used only to */}
+      {/* raise GitHub's public API rate limit (60 req/hr unauthenticated   */}
+      {/* vs. 5,000/hr with a token). No OAuth flow exists here — nothing   */}
+      {/* pretends to request scopes it doesn't actually use.               */}
       {/* ------------------------------------------------------------------- */}
-      {showOAuthModal && (
+      {showPatInput && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6 text-center">
             <div className="w-16 h-16 bg-slate-900 text-white rounded-2xl flex items-center justify-center mx-auto shadow-md">
@@ -849,44 +906,47 @@ export const GithubImporter: React.FC<GithubImporterProps> = ({ onConfirmImport,
             </div>
 
             <div className="space-y-2">
-              <h3 className="text-xl font-black text-[#0B192C]">GitHub OAuth Authorization</h3>
+              <h3 className="text-xl font-black text-[#0B192C]">GitHub Personal Access Token</h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                HireFlow AI is requesting read access to your public repositories, organization memberships, commit history, and profile details to extract technical skills.
+                Optional. Unauthenticated requests to GitHub's API are limited to 60/hour; a token raises that to 5,000/hour. Create a read-only token with no scopes selected at{' '}
+                <a
+                  href="https://github.com/settings/tokens"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  github.com/settings/tokens
+                </a>.
               </p>
             </div>
 
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left space-y-2 text-xs">
-              <div className="flex items-center justify-between font-bold text-[#0B192C]">
-                <span>Permissions Requested:</span>
-                <span className="text-emerald-700 font-mono">read:user, repo</span>
-              </div>
-              <ul className="list-disc list-inside text-slate-600 space-y-1 text-[11px]">
-                <li>Read public repository metadata & package manifests</li>
-                <li>Analyze topics, languages, and commit activity</li>
-                <li>Extract technical skills and build resume project entries</li>
-              </ul>
+            <div className="text-left space-y-1.5">
+              <label className="text-xs font-bold text-[#0B192C]">Token</label>
+              <input
+                type="password"
+                value={patToken}
+                onChange={(e) => setPatToken(e.target.value)}
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-mono text-[#0B192C] focus:outline-none focus:border-[#0B192C]"
+              />
+              <p className="text-[10px] text-slate-400">Stored only in this browser session, never sent anywhere but api.github.com.</p>
             </div>
 
             <div className="flex items-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setShowOAuthModal(false)}
+                onClick={() => setShowPatInput(false)}
                 className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setShowOAuthModal(false);
-                  setGithubConnected(true);
-                  setIsFetchingRepos(true);
-                  setTimeout(() => setIsFetchingRepos(false), 500);
-                }}
+                onClick={handleSavePat}
                 className="flex-1 py-3 bg-[#0B192C] hover:bg-slate-800 text-white font-bold text-xs rounded-xl cursor-pointer flex items-center justify-center gap-2"
               >
                 <CheckCircle2 size={16} className="text-emerald-400" />
-                <span>Authorize HireFlow</span>
+                <span>Save & Re-sync</span>
               </button>
             </div>
           </div>

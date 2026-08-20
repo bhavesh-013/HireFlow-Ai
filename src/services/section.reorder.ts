@@ -2,7 +2,7 @@
  * HireFlow Section Reorder Engine
  * Detects career stage and recommends optimal ATS section ordering.
  */
-import type { ParsedResumeData, ResumeType, SectionNavItem } from '../types';
+import type { CustomSectionData, ParsedResumeData, ResumeType, SectionNavItem } from '../types';
 
 export type CareerStage = 'fresher' | 'experienced' | 'senior';
 
@@ -15,20 +15,32 @@ export interface SectionOrderRecommendation {
   reason: string;
 }
 
-export const FRESHER_ORDER = ['header', 'summary', 'education', 'skills', 'projects', 'experience', 'achievements', 'certificates'];
+export const FRESHER_ORDER = ['header', 'summary', 'skills', 'tools_tech', 'education', 'courses', 'achievements', 'projects', 'certificates', 'tech_strengths', 'languages', 'interests', 'declaration'];
 export const EXPERIENCED_ORDER = ['header', 'summary', 'experience', 'projects', 'achievements', 'education', 'skills'];
 const SENIOR_ORDER = EXPERIENCED_ORDER;
+
+/** Section keys that render as empty, user-fillable custom sections rather
+ * than one of the native resume fields (experience, skills, etc). */
+const CUSTOM_SECTION_KEYS = new Set(['tools_tech', 'courses', 'tech_strengths', 'languages', 'interests', 'declaration']);
 
 /**
  * Builds the default Section Navigator items for a resume, given the
  * user's explicit Fresher / Experienced choice (see types.ResumeType).
  * Reuses FRESHER_ORDER / EXPERIENCED_ORDER above rather than a second copy.
  *
- * For Fresher resumes, "experience" (used for internships) starts hidden
- * — per the "don't force empty sections" rule — but stays in the
- * navigator so the user can turn it on with one click if they've had an
- * internship. Every other native section stays visible; empty ones are
- * simply not rendered in the final one-page output.
+ * This is the single source of truth for "what sections does a resume
+ * start with" — used identically whether a resume is brand new or the
+ * user switches Fresher/Experienced later, so the section list never
+ * differs between those two moments. Every section here is structural
+ * only (a title and an empty place to type into); nothing is pre-filled
+ * with sample or placeholder content.
+ *
+ * This is the single source of truth for "what sections does a resume
+ * start with" — used identically whether a resume is brand new or the
+ * user switches Fresher/Experienced later, so the section list never
+ * differs between those two moments. Every section here is structural
+ * only (a title and an empty place to type into); nothing is pre-filled
+ * with sample or placeholder content.
  */
 export function getDefaultSectionItems(resumeType: ResumeType): SectionNavItem[] {
   const order = resumeType === 'fresher' ? FRESHER_ORDER : EXPERIENCED_ORDER;
@@ -38,27 +50,40 @@ export function getDefaultSectionItems(resumeType: ResumeType): SectionNavItem[]
     summary: 'Summary',
     education: 'Education',
     skills: 'Skills',
+    tools_tech: 'Tools & Technologies',
+    courses: 'Courses',
     projects: 'Projects',
-    experience: resumeType === 'fresher' ? 'Internships / Experience' : 'Experience',
-    certificates: 'Certificates',
+    experience: 'Experience',
+    certificates: 'Certifications',
     achievements: 'Achievements',
+    tech_strengths: 'Technical Strengths',
+    languages: 'Languages',
+    interests: 'Interests',
+    declaration: 'Declaration',
   };
   const typeFor: Record<string, SectionNavItem['type']> = {
     header: 'personal',
     summary: 'summary',
     education: 'education',
     skills: 'skills',
+    tools_tech: 'custom',
+    courses: 'custom',
     projects: 'projects',
     experience: 'experience',
     certificates: 'certificates',
     achievements: 'achievements',
+    tech_strengths: 'custom',
+    languages: 'custom',
+    interests: 'custom',
+    declaration: 'custom',
   };
 
   const items: SectionNavItem[] = order.map((key, idx) => ({
-    id: typeFor[key],
+    id: CUSTOM_SECTION_KEYS.has(key) ? `sec_${key}` : typeFor[key],
     title: titleFor[key],
     type: typeFor[key],
-    visible: resumeType === 'fresher' && key === 'experience' ? false : true,
+    visible: true,
+    isCustom: CUSTOM_SECTION_KEYS.has(key) ? true : undefined,
     num: String(idx + 1).padStart(2, '0'),
   }));
 
@@ -71,6 +96,25 @@ export function getDefaultSectionItems(resumeType: ResumeType): SectionNavItem[]
   });
 
   return items;
+}
+
+/**
+ * Empty, user-fillable custom sections matching the extra structural
+ * sections in getDefaultSectionItems('fresher') (Tools & Technologies,
+ * Courses, Technical Strengths, Languages, Interests, Declaration).
+ * Every `items` array starts empty — the user types their own content
+ * into these, nothing is pre-filled with sample text.
+ */
+export function getDefaultCustomSections(resumeType: ResumeType): CustomSectionData[] {
+  if (resumeType !== 'fresher') return [];
+  return [
+    { id: 'sec_tools_tech', title: 'Tools & Technologies', items: [] },
+    { id: 'sec_courses', title: 'Courses', items: [] },
+    { id: 'sec_tech_strengths', title: 'Technical Strengths', items: [] },
+    { id: 'sec_languages', title: 'Languages', items: [] },
+    { id: 'sec_interests', title: 'Interests', items: [] },
+    { id: 'sec_declaration', title: 'Declaration', items: [] },
+  ];
 }
 
 export function detectCareerStage(resumeData: ParsedResumeData): CareerStage {

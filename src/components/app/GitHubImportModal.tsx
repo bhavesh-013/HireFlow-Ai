@@ -22,6 +22,8 @@ import {
   Key,
   Briefcase,
   FileText,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 import { ExtractedSkill, ProjectItem } from '../../types';
 import { useGithubImport } from '../../hooks/useGithubImport';
@@ -42,7 +44,7 @@ export const GitHubImportModal: React.FC<GitHubImportModalProps> = ({
   isOpen,
   onClose,
   mode = 'skills',
-  username: initialUsername = 'alexkumar-dev',
+  username: initialUsername = '',
   currentSkillsString = '',
   targetJobDescription: initialTargetJd = '',
   onImportSkills,
@@ -91,17 +93,61 @@ export const GitHubImportModal: React.FC<GitHubImportModalProps> = ({
 
   const [patToken, setPatToken] = useState('');
   const [showPatInput, setShowPatInput] = useState(false);
+  const [editableProjects, setEditableProjects] = useState<any[]>([]);
 
-  // Sync on open
+  // Sync on open — only if we already know the user's GitHub username.
+  // Never auto-sync against a placeholder account; that would show a
+  // stranger's real repos as if they were importable for this user.
   useEffect(() => {
     if (isOpen) {
       setJobDescriptionInput(initialTargetJd);
-      if (repos.length === 0) {
-        if (initialUsername) setUsername(initialUsername);
-        syncRepos(initialUsername || 'alexkumar-dev');
+      if (repos.length === 0 && initialUsername) {
+        setUsername(initialUsername);
+        syncRepos(initialUsername);
       }
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (extractedProjects && extractedProjects.length > 0) {
+      setEditableProjects(extractedProjects);
+    }
+  }, [extractedProjects]);
+
+  const handleDeleteProject = (projId: string) => {
+    setEditableProjects((prev) => prev.filter((p) => (p.id || p.title) !== projId));
+  };
+
+  const handleUpdateBullet = (projId: string, bulletIdx: number, text: string) => {
+    setEditableProjects((prev) =>
+      prev.map((p) => {
+        if ((p.id || p.title) !== projId) return p;
+        const newBullets = [...(p.bullets || [])];
+        newBullets[bulletIdx] = text;
+        return { ...p, bullets: newBullets };
+      })
+    );
+  };
+
+  const handleDeleteBullet = (projId: string, bulletIdx: number) => {
+    setEditableProjects((prev) =>
+      prev.map((p) => {
+        if ((p.id || p.title) !== projId) return p;
+        const newBullets = (p.bullets || []).filter((_: any, idx: number) => idx !== bulletIdx);
+        return { ...p, bullets: newBullets };
+      })
+    );
+  };
+
+  const handleAddBullet = (projId: string) => {
+    setEditableProjects((prev) =>
+      prev.map((p) => {
+        if ((p.id || p.title) !== projId) return p;
+        const newBullets = [...(p.bullets || []), 'New technical accomplishment bullet'];
+        return { ...p, bullets: newBullets };
+      })
+    );
+  };
 
   const handleSyncSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,8 +168,9 @@ export const GitHubImportModal: React.FC<GitHubImportModalProps> = ({
 
   const handleConfirmFinalImport = () => {
     if (mode === 'projects') {
-      if (onImportProjects && extractedProjects.length > 0) {
-        onImportProjects(extractedProjects);
+      const finalProjects = editableProjects.length > 0 ? editableProjects : extractedProjects;
+      if (onImportProjects && finalProjects.length > 0) {
+        onImportProjects(finalProjects);
       }
     } else {
       if (!mergeResult) return;
@@ -601,69 +648,112 @@ export const GitHubImportModal: React.FC<GitHubImportModalProps> = ({
                   </div>
 
                   <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-                    {extractedProjects.map((proj, idx) => (
-                      <div
-                        key={idx}
-                        className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5 transition-all hover:border-slate-300"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-[#0B192C]">{proj.title}</span>
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-full">
-                              {proj.projectType || 'Open Source'}
-                            </span>
-                            {proj.stars > 0 && (
-                              <span className="text-xs font-mono text-amber-700 bg-amber-50 px-2 py-0.5 rounded flex items-center gap-1">
-                                <Star size={11} className="fill-amber-500 text-amber-500" /> {proj.stars}
+                    {(editableProjects.length > 0 ? editableProjects : extractedProjects).map((proj, idx) => {
+                      const projKey = proj.id || proj.title || `proj_${idx}`;
+                      return (
+                        <div
+                          key={projKey}
+                          className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5 transition-all hover:border-slate-300 relative group"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm text-[#0B192C]">{proj.title}</span>
+                              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-full">
+                                {proj.projectType || 'Open Source'}
                               </span>
-                            )}
-                          </div>
+                              {proj.stars > 0 && (
+                                <span className="text-xs font-mono text-amber-700 bg-amber-50 px-2 py-0.5 rounded flex items-center gap-1">
+                                  <Star size={11} className="fill-amber-500 text-amber-500" /> {proj.stars}
+                                </span>
+                              )}
+                              {proj.liveUrl && (
+                                <a
+                                  href={proj.liveUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[10px] font-mono text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded flex items-center gap-1 border border-emerald-200"
+                                >
+                                  Live Demo <ExternalLink size={9} />
+                                </a>
+                              )}
+                            </div>
 
-                          <div className="flex items-center gap-2">
-                            {proj.relevanceScore && proj.relevanceScore > 0 ? (
-                              <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-lg border border-emerald-300 flex items-center gap-1">
-                                <TrendingUp size={12} /> {proj.relevanceScore}% JD Match
-                              </span>
-                            ) : (
-                              <span className="text-xs font-mono font-bold text-slate-700 bg-slate-200/80 px-2 py-0.5 rounded-lg">
-                                ATS Quality: {proj.qualityScore || 92}%
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-slate-600 leading-relaxed">{proj.description}</p>
-
-                        {/* STAR Bullets */}
-                        <div className="space-y-1.5 pt-1">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                            STAR Accomplishment Bullets
-                          </span>
-                          <ul className="space-y-1 text-xs text-slate-700">
-                            {proj.bullets?.map((b: string, bIdx: number) => (
-                              <li key={bIdx} className="flex items-start gap-2 bg-white p-2 rounded-xl border border-slate-200/80 text-[11px] leading-relaxed">
-                                <span className="text-blue-600 font-bold shrink-0">•</span>
-                                <span>{b}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        {/* Tech Stack Tags */}
-                        {proj.techStack && proj.techStack.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {proj.techStack.map((tech: string) => (
-                              <span
-                                key={tech}
-                                className="bg-slate-200 text-slate-800 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md"
+                            <div className="flex items-center gap-2">
+                              {proj.relevanceScore && proj.relevanceScore > 0 ? (
+                                <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-lg border border-emerald-300 flex items-center gap-1">
+                                  <TrendingUp size={12} /> {proj.relevanceScore}% JD Match
+                                </span>
+                              ) : (
+                                <span className="text-xs font-mono font-bold text-slate-700 bg-slate-200/80 px-2 py-0.5 rounded-lg">
+                                  ATS Quality: {proj.qualityScore || 92}%
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteProject(projKey)}
+                                className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer rounded"
+                                title="Remove project"
                               >
-                                {tech}
-                              </span>
-                            ))}
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
+
+                          <p className="text-xs text-slate-600 leading-relaxed">{proj.description}</p>
+
+                          {/* Editable STAR Bullets */}
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                STAR Accomplishment Bullets (Factual Evidence)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleAddBullet(projKey)}
+                                className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                              >
+                                <Plus size={11} /> Add Bullet
+                              </button>
+                            </div>
+                            <ul className="space-y-1.5 text-xs text-slate-700">
+                              {proj.bullets?.map((b: string, bIdx: number) => (
+                                <li key={bIdx} className="flex items-center gap-2 bg-white p-1.5 px-2.5 rounded-xl border border-slate-200/80 text-[11px] leading-relaxed group/bullet">
+                                  <span className="text-blue-600 font-bold shrink-0">•</span>
+                                  <input
+                                    type="text"
+                                    value={b}
+                                    onChange={(e) => handleUpdateBullet(projKey, bIdx, e.target.value)}
+                                    className="flex-1 bg-transparent text-slate-800 text-xs font-medium focus:outline-none focus:bg-slate-50 rounded px-1"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteBullet(projKey, bIdx)}
+                                    className="text-slate-300 group-hover/bullet:text-rose-500 transition-colors cursor-pointer"
+                                    title="Delete bullet"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          {/* Tech Stack Tags */}
+                          {proj.techStack && proj.techStack.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {proj.techStack.map((tech: string) => (
+                                <span
+                                  key={tech}
+                                  className="bg-slate-200 text-slate-800 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md"
+                                >
+                                  {tech}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

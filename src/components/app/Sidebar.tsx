@@ -19,7 +19,6 @@ import {
   X,
   Compass
 } from 'lucide-react';
-import { mockUser } from '../../data/mockData';
 import { auth, getStoredUser } from '../../lib/api';
 import logoIcon from '../../assets/logo-icon.png';
 
@@ -33,11 +32,10 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const navigate = useNavigate();
   const storedUser = getStoredUser();
   const currentUser = {
-    ...mockUser,
-    name: storedUser?.name || mockUser.name,
+    name: storedUser?.name || 'User',
     avatar: storedUser?.name
       ? storedUser.name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
-      : mockUser.avatar,
+      : 'U',
   };
 
   const [buildGroupOpen, setBuildGroupOpen] = useState(true);

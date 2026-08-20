@@ -22,20 +22,13 @@ import {
   FileUp,
   Code
 } from 'lucide-react';
-import {
-  mockUploadHistory,
-  mockLinkedInProfileData,
-  mockResumes,
-} from '../data/mockData';
 import { getStoredUser } from '../lib/api';
 import { ParsedResumeData, UploadHistoryItem, ResumeType } from '../types';
 import { GithubImporter } from '../components/GithubImporter';
 import ResumeEditorPage from './ResumeEditorPage';
-import { getDefaultSectionItems, suggestResumeType } from '../services/section.reorder';
+import { getDefaultSectionItems, getDefaultCustomSections, suggestResumeType } from '../services/section.reorder';
 import { parseResumeFile } from '../utils/fileParser';
 import { parseResumeText } from '../utils/resumeTextParser';
-import { FRESHER_DEFAULT_RESUME } from '../data/defaultFresherResume';
-import { EXPERIENCED_DEFAULT_RESUME } from '../data/defaultExperiencedResume';
 
 export default function ResumeBuilderPage() {
   const navigate = useNavigate();
@@ -155,25 +148,48 @@ export default function ResumeBuilderPage() {
   const handleStartScratch = (e: React.FormEvent) => {
     e.preventDefault();
     const isFresher = resumeType === 'fresher';
-    const blankResume: ParsedResumeData = isFresher
-      ? {
-          ...FRESHER_DEFAULT_RESUME,
-          title: `${scratchTitle || FRESHER_DEFAULT_RESUME.personalInfo.fullName}.pdf`,
-          targetRole: scratchTargetRole || FRESHER_DEFAULT_RESUME.targetRole,
-          personalInfo: {
-            ...FRESHER_DEFAULT_RESUME.personalInfo,
-            jobTitle: scratchTargetRole || FRESHER_DEFAULT_RESUME.personalInfo.jobTitle,
-          },
-        }
-      : {
-          ...EXPERIENCED_DEFAULT_RESUME,
-          title: `${scratchTitle || EXPERIENCED_DEFAULT_RESUME.personalInfo.fullName}.pdf`,
-          targetRole: scratchTargetRole || EXPERIENCED_DEFAULT_RESUME.targetRole,
-          personalInfo: {
-            ...EXPERIENCED_DEFAULT_RESUME.personalInfo,
-            jobTitle: scratchTargetRole || EXPERIENCED_DEFAULT_RESUME.personalInfo.jobTitle,
-          },
-        };
+
+    // A genuinely blank resume — only the section scaffolding is
+    // pre-built (so the editor has something to navigate), prefilled with
+    // nothing but the real logged-in user's own contact details. No
+    // sample person's name, projects, employer, or achievements are ever
+    // seeded into a new resume.
+    const blankResume: ParsedResumeData = {
+      title: `${scratchTitle || currentUser?.name || 'Untitled Resume'}.pdf`,
+      targetRole: scratchTargetRole || '',
+      templateName: isFresher ? 'Minimal Technical' : 'ATS Professional',
+      importSource: 'scratch',
+      resumeType,
+      resumeStyling: {
+        fontFamily: isFresher ? 'Inter, sans-serif' : 'Georgia, serif',
+        primaryColor: '#000000',
+        accentColor: '#000000',
+        textColor: '#111827',
+        backgroundColor: '#FFFFFF',
+        fontSize: 'normal',
+        lineHeight: 'normal',
+        sectionSpacing: 'normal',
+      },
+      sectionsOrder: getDefaultSectionItems(resumeType),
+      personalInfo: {
+        fullName: currentUser?.name || '',
+        jobTitle: scratchTargetRole || '',
+        email: currentUser?.email || '',
+        phone: currentUser?.phone || '',
+        location: currentUser?.location || '',
+        website: currentUser?.website || '',
+        github: currentUser?.github || '',
+        linkedin: currentUser?.linkedin || '',
+        summary: '',
+      },
+      skills: '',
+      experiences: [],
+      education: [],
+      projects: [],
+      certificates: [],
+      achievements: [],
+      customSections: getDefaultCustomSections(resumeType),
+    };
 
     runImportProcess(
       'Initializing Fresh Resume Workspace',
@@ -374,56 +390,103 @@ export default function ResumeBuilderPage() {
     }
   };
 
-  const processLinkedInPDF = (file: File) => {
+  const processLinkedInPDF = async (file: File) => {
     setLinkedInFile(file);
+    setIsProcessing(true);
+    setProcessingTitle(`Importing LinkedIn Export: ${file.name}`);
+    setProgressPercent(15);
+    setCurrentStepText('Reading LinkedIn PDF profile document...');
 
-    const linkedInParsedResume: ParsedResumeData = {
-      title: `LinkedIn_Profile_${mockLinkedInProfileData.fullName.replace(' ', '_')}.pdf`,
-      targetRole: 'Senior Frontend Engineer',
-      templateName: 'Silicon Valley Executive',
-      importSource: 'linkedin',
-      personalInfo: {
-        fullName: currentUser?.full_name || currentUser?.name || mockLinkedInProfileData.fullName,
-        jobTitle: 'Senior Frontend Engineer',
-        email: currentUser?.email || '',
-        phone: currentUser?.phone || '',
-        location: currentUser?.location || '',
-        website: currentUser?.website || '',
-        linkedin: currentUser?.linkedin || '',
-        github: currentUser?.github || '',
-        summary: mockLinkedInProfileData.summary,
-      },
-      experiences: mockLinkedInProfileData.experiences,
-      education: mockLinkedInProfileData.education,
-      skills: mockLinkedInProfileData.skills,
-      projects: [
-        {
-          id: 'proj_li_1',
-          title: 'Design System & Micro-Frontend Architecture',
-          description: 'Enterprise React component library & atomic design system.',
-          techStack: ['React', 'TypeScript', 'Tailwind CSS'],
-          bullets: ['Imported from LinkedIn profile endorsements & project highlights.'],
+    let parsedData: ParsedResumeData;
+    let parseFailed = false;
+
+    try {
+      // LinkedIn "Save to PDF" exports are ordinary PDF documents, so they
+      // go through the same real pdfjs-dist extraction + text parser used
+      // for the Upload tab — never fabricated placeholder profile data.
+      const cleanText = await parseResumeFile(file);
+      setProgressPercent(55);
+      setCurrentStepText('Extracting summary, experience, education & skills...');
+
+      if (!cleanText || cleanText.trim().length < 20) {
+        parseFailed = true;
+      }
+
+      const extracted = parseResumeText(cleanText, file.name);
+
+      parsedData = {
+        ...extracted,
+        title: extracted.title || `LinkedIn_Profile_${file.name.replace(/\.pdf$/i, '')}`,
+        importSource: 'linkedin',
+        personalInfo: {
+          ...extracted.personalInfo,
+          fullName: extracted.personalInfo.fullName || currentUser?.full_name || currentUser?.name || '',
+          email: extracted.personalInfo.email || currentUser?.email || '',
+          phone: extracted.personalInfo.phone || currentUser?.phone || '',
+          location: extracted.personalInfo.location || currentUser?.location || '',
+          website: extracted.personalInfo.website || currentUser?.website || '',
+          github: extracted.personalInfo.github || currentUser?.github || '',
+          linkedin: extracted.personalInfo.linkedin || currentUser?.linkedin || '',
         },
-      ],
-      certificates: mockLinkedInProfileData.certifications.map((c) => ({
-        id: c.id,
-        title: c.title,
-        issuer: c.issuer,
-        date: c.date,
-      })),
-    };
+      };
 
-    runImportProcess(
-      `Importing LinkedIn Export: ${file.name}`,
-      [
-        'Reading LinkedIn PDF profile document stream...',
-        'Extracting About summary and Headline tags...',
-        'Parsing Experience positions, company names, and dates...',
-        'Extracting Education history and LinkedIn Skill endorsements...',
-        'Auto-filling Editor with LinkedIn profile data...',
-      ],
-      linkedInParsedResume
-    );
+      const inferredType = suggestResumeType(parsedData);
+      parsedData.resumeType = inferredType;
+      parsedData.sectionsOrder = getDefaultSectionItems(inferredType);
+    } catch (err) {
+      console.error('LinkedIn PDF parsing error:', err);
+      parseFailed = true;
+      parsedData = {
+        title: `LinkedIn_Profile_${file.name.replace(/\.pdf$/i, '')}`,
+        importSource: 'linkedin',
+        resumeType: 'experienced',
+        sectionsOrder: getDefaultSectionItems('experienced'),
+        personalInfo: {
+          fullName: currentUser?.full_name || currentUser?.name || '',
+          jobTitle: '',
+          email: currentUser?.email || '',
+          phone: currentUser?.phone || '',
+          location: currentUser?.location || '',
+          website: currentUser?.website || '',
+          github: currentUser?.github || '',
+          linkedin: currentUser?.linkedin || '',
+          summary: '',
+        },
+        experiences: [],
+        education: [],
+        skills: '',
+        projects: [],
+        certificates: [],
+      };
+    }
+
+    if (parseFailed) {
+      setUploadParseWarning('Unable to extract some information from this LinkedIn export. Please review and correct the fields in the editor.');
+    }
+
+    setProgressPercent(85);
+    setCurrentStepText('Auto-filling Resume Editor...');
+
+    try {
+      localStorage.setItem('hireflow_current_resume', JSON.stringify(parsedData));
+    } catch {
+      // ignore
+    }
+
+    setProgressPercent(100);
+    setCurrentStepText(parseFailed ? 'Import complete — please review extracted fields.' : 'Import complete! Opening Resume Editor...');
+
+    setTimeout(() => {
+      setIsProcessing(false);
+      setShowEditor(true);
+      if (parseFailed) {
+        try {
+          sessionStorage.setItem('hireflow_upload_warning', 'Unable to extract some information from this LinkedIn export. Please review and correct the fields below.');
+        } catch {
+          // ignore
+        }
+      }
+    }, 800);
   };
 
 
@@ -848,7 +911,15 @@ export default function ResumeBuilderPage() {
               parsedResume
             );
           }}
-          mockUser={currentUser || { name: '', email: '', phone: '', location: '', website: '', github: '', linkedin: '', id: '', role: '', membership: '', avatar: '', bio: '', resumePreferences: { targetRole: '', industry: '', experienceLevel: '', autoSave: false, aiEnhanceOnExport: false } }}
+          currentUser={{
+            name: currentUser?.name || '',
+            email: currentUser?.email || '',
+            phone: (currentUser as any)?.phone || '',
+            location: (currentUser as any)?.location || '',
+            website: (currentUser as any)?.website || '',
+            github: (currentUser as any)?.github || '',
+            linkedin: (currentUser as any)?.linkedin || '',
+          }}
         />
       )}
 

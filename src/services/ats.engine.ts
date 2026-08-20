@@ -190,7 +190,7 @@ function createRuleResult(
 
 // ─── 1. Contact Information Rules (Max 5 Points) ─────────────────────────────
 function evalContactRules(r: ParsedResumeData): ATSRuleResult[] {
-  const pi = r.personalInfo || {};
+  const pi: any = r.personalInfo || {};
   const rules: ATSRuleResult[] = [];
 
   // Name check (1 pt)
@@ -313,11 +313,11 @@ function evalStructureRules(r: ParsedResumeData, resumeType: ResumeType): ATSRul
   let validSynonymHeadings = 0;
 
   // Check experience synonym
-  if (hasExp || Object.values(synonyms.experience || []).some(syn => textLower.includes((syn as string).toLowerCase()))) validSynonymHeadings++;
+  if (hasExp || Object.values((synonyms as any).experience || {}).some((syn: any) => textLower.includes(String(syn).toLowerCase()))) validSynonymHeadings++;
   // Check education synonym
-  if (hasEdu || Object.values(synonyms.education || []).some(syn => textLower.includes((syn as string).toLowerCase()))) validSynonymHeadings++;
+  if (hasEdu || Object.values((synonyms as any).education || {}).some((syn: any) => textLower.includes(String(syn).toLowerCase()))) validSynonymHeadings++;
   // Check skills synonym
-  if (hasSkills || Object.values(synonyms.skills || []).some(syn => textLower.includes((syn as string).toLowerCase()))) validSynonymHeadings++;
+  if (hasSkills || Object.values((synonyms as any).skills || {}).some((syn: any) => textLower.includes(String(syn).toLowerCase()))) validSynonymHeadings++;
 
   const synonymScore = validSynonymHeadings >= 3 ? 2 : validSynonymHeadings >= 2 ? 1 : 0;
   rules.push(createRuleResult(
@@ -355,7 +355,7 @@ function evalFormattingRules(r: ParsedResumeData): ATSRuleResult[] {
 
   // Non-standard symbols / Excessive styling (2 pts)
   const emojiPattern = /[\u{1F300}-\u{1FFFF}]/u;
-  const pi = r.personalInfo || {};
+  const pi: any = r.personalInfo || {};
   const hasEmoji = emojiPattern.test(pi.fullName || '') || emojiPattern.test(pi.jobTitle || '');
   rules.push(createRuleResult(
     'fmt_symbols_styling', 'Formatting & Layout', 'medium', !hasEmoji,
@@ -787,7 +787,7 @@ function evalKeywordRules(r: ParsedResumeData, jobDescription?: string): ATSRule
     const jdLower = jobDescription.toLowerCase();
     const jdWords = jdLower.match(/\b[a-z][a-z0-9+#./-]{3,}\b/g) || [];
     const stopWords = new Set(['with', 'that', 'this', 'will', 'have', 'from', 'they', 'your', 'more', 'their', 'been', 'able', 'also', 'into', 'over', 'such', 'both', 'well', 'must', 'some', 'each', 'than', 'then', 'when', 'like', 'very', 'just', 'most', 'for', 'and', 'the', 'in', 'to', 'of', 'a', 'an', 'is', 'are', 'was', 'were']);
-    const jdKeyTerms = [...new Set(jdWords.filter((w) => !stopWords.has(w) && w.length >= 4))].map(normalizeTerm);
+    const jdKeyTerms = [...new Set((jdWords as string[]).filter((w) => !stopWords.has(w) && w.length >= 4))].map(normalizeTerm);
 
     let matchCount = 0;
     jdKeyTerms.forEach((term) => {
@@ -860,7 +860,7 @@ export function calculateJdMatchBreakdown(
   // 1. Keyword Match (Normalized)
   const jdWords = jdLower.match(/\b[a-z][a-z0-9+#./-]{3,}\b/g) || [];
   const stopWords = new Set(['with', 'that', 'this', 'will', 'have', 'from', 'they', 'your', 'more', 'their', 'been', 'able', 'also', 'into', 'over', 'such', 'both', 'well', 'must', 'some', 'each', 'than', 'then', 'when', 'like', 'very', 'just', 'most', 'for', 'and', 'the', 'in', 'to', 'of', 'a', 'an', 'is', 'are', 'was', 'were', 'able', 'need']);
-  const uniqueJdTerms = [...new Set(jdWords.filter((w) => !stopWords.has(w) && w.length >= 4))];
+  const uniqueJdTerms = [...new Set((jdWords as string[]).filter((w) => !stopWords.has(w) && w.length >= 4))];
 
   let kwMatches = 0;
   uniqueJdTerms.forEach((t) => {
@@ -878,7 +878,7 @@ export function calculateJdMatchBreakdown(
   const skillMatch = clamp(Math.round(keywordMatch * 0.6 + technologyMatch * 0.4));
 
   // 4. Job Title Match
-  const pi = resumeData.personalInfo || {};
+  const pi: any = resumeData.personalInfo || {};
   const candTitle = (pi.jobTitle || '').toLowerCase();
   const jdTitleMatch = jdLower.match(/(senior|lead|staff|principal|junior|mid)?\s*(full\s*stack|frontend|backend|software|devops|data|cloud)\s*(engineer|developer|architect|lead)/i);
   const expectedTitle = jdTitleMatch ? jdTitleMatch[0].toLowerCase() : '';

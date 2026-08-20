@@ -17,8 +17,8 @@ import {
   Sparkles,
   BarChart3
 } from 'lucide-react';
-import { mockUser, mockNotifications } from '../../data/mockData';
 import { getStoredUser } from '../../lib/api';
+import { notificationService, NotificationRecord } from '../../services/notification.service';
 
 interface NavbarProps {
   sidebarOpen: boolean;
@@ -31,7 +31,7 @@ export default function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const storedUser = getStoredUser();
   const initials = storedUser?.name
     ? storedUser.name
@@ -40,13 +40,22 @@ export default function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
         .join('')
         .slice(0, 2)
         .toUpperCase()
-    : mockUser.avatar;
+    : 'U';
   const currentUser = {
-    ...mockUser,
-    name: storedUser?.name || mockUser.name,
-    email: storedUser?.email || mockUser.email,
+    name: storedUser?.name || 'User',
+    email: storedUser?.email || '',
     avatar: initials,
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    notificationService.listNotifications().then((data) => {
+      if (!cancelled) setNotifications(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const notifRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -132,10 +141,17 @@ export default function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    const unread = notifications.filter((n) => !n.is_read);
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    unread.forEach((n) => {
+      notificationService.markAsRead(n.id).catch(() => {
+        // Non-fatal: local state already reflects "read"; a retry can
+        // happen next time the list is refetched.
+      });
+    });
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -233,35 +249,41 @@ export default function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
               </div>
 
               <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-                {notifications.map((item) => (
-                  <div
-                    key={item.id}
-                    className={`p-3.5 text-left flex items-start gap-3 transition-colors ${
-                      item.read ? 'bg-white' : 'bg-blue-50/30'
-                    }`}
-                  >
-                    <div className="p-2 bg-blue-50 text-blue-600 rounded-xl shrink-0 mt-0.5">
-                      {item.type === 'score' ? (
-                        <BarChart3 size={15} />
-                      ) : item.type === 'suggestion' ? (
-                        <Sparkles size={15} />
-                      ) : (
-                        <CheckCircle2 size={15} />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-[#0B192C] leading-snug">
-                        {item.title}
-                      </p>
-                      <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-                        {item.message}
-                      </p>
-                      <span className="text-[10px] text-slate-400 font-mono mt-1 block">
-                        {item.timestamp}
-                      </span>
-                    </div>
+                {notifications.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    You're all caught up — no notifications yet.
                   </div>
-                ))}
+                ) : (
+                  notifications.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`p-3.5 text-left flex items-start gap-3 transition-colors ${
+                        item.is_read ? 'bg-white' : 'bg-blue-50/30'
+                      }`}
+                    >
+                      <div className="p-2 bg-blue-50 text-blue-600 rounded-xl shrink-0 mt-0.5">
+                        {item.type === 'score' ? (
+                          <BarChart3 size={15} />
+                        ) : item.type === 'suggestion' ? (
+                          <Sparkles size={15} />
+                        ) : (
+                          <CheckCircle2 size={15} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-[#0B192C] leading-snug">
+                          {item.title}
+                        </p>
+                        <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                          {item.message}
+                        </p>
+                        <span className="text-[10px] text-slate-400 font-mono mt-1 block">
+                          {new Date(item.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="p-2 border-t border-slate-100 bg-slate-50 text-center">

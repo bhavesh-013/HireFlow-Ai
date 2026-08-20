@@ -16,7 +16,7 @@ import { validateField } from './resume.validator';
 import { aiService } from './ai.service';
 import type { ParsedResumeData } from '../types';
 
-export function runAiAssistantTests(): { total: number; passed: number; results: string[] } {
+export async function runAiAssistantTests(): Promise<{ total: number; passed: number; results: string[] }> {
   const log: string[] = [];
   let passedCount = 0;
   let totalCount = 0;
@@ -56,23 +56,23 @@ export function runAiAssistantTests(): { total: number; passed: number; results:
   assert(hasMetricAdvice && !containsFakeNumber, 'TEST 3 — Missing Metric Advice (No Fabrication)', `Advice present without fake numbers`);
 
   // TEST 4 — Fabrication Protection
-  const assistRes = aiService.assistWriting({
+  const assistRes = await aiService.assistWriting({
     text: 'Built a React website.',
     action: 'improve',
     section: 'experience',
   });
-  const fabricatedUsersOrNumbers = /\b(50,000|100,000|10k|99\.9%|\$1M)\b/.test(assistRes.suggested);
-  assert(!fabricatedUsersOrNumbers, 'TEST 4 — Strict Anti-Fabrication Guarantee', `Suggested text: "${assistRes.suggested}"`);
+  const fabricatedUsersOrNumbers = /\b(50,000|100,000|10k|99\.9%|\$1M)\b/.test(assistRes?.suggested || '');
+  assert(!fabricatedUsersOrNumbers, 'TEST 4 — Strict Anti-Fabrication Guarantee', `Suggested text: "${assistRes?.suggested}"`);
 
   // TEST 5 — JD Awareness without Skill Injection
   const jdText = 'Requirements: React, TypeScript, AWS';
-  const jdAssistRes = aiService.assistWriting({
+  const jdAssistRes = await aiService.assistWriting({
     text: 'Developed web components using React and JavaScript.',
     action: 'ats_relevance',
     section: 'experience',
     jdText,
   });
-  const injectedTsOrAws = /\b(TypeScript|AWS)\b/.test(jdAssistRes.suggested);
+  const injectedTsOrAws = /\b(TypeScript|AWS)\b/.test(jdAssistRes?.suggested || '');
   assert(!injectedTsOrAws, 'TEST 5 — JD Awareness (No Skill Injection)', `Injected TS/AWS = ${injectedTsOrAws}`);
 
   // TEST 6 — Apply Workflow
@@ -102,8 +102,7 @@ export function runAiAssistantTests(): { total: number; passed: number; results:
 
 // Run if executed directly
 if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
-  const result = runAiAssistantTests();
-  result.results.forEach((line) => console.log(line));
+  runAiAssistantTests().then((res) => res.results.forEach((line) => console.log(line)));
 }
 
 export default runAiAssistantTests;

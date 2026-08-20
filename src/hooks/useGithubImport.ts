@@ -26,7 +26,7 @@ export function useGithubImport(options: UseGithubImportOptions = {}) {
   const mode = options.mode || 'skills';
 
   // Step 1: Username & Profile state
-  const [username, setUsername] = useState('alexkumar-dev');
+  const [username, setUsername] = useState('');
   const [userProfile, setUserProfile] = useState<GitHubUserProfile | null>(null);
   const [isSyncingRepos, setIsSyncingRepos] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -82,11 +82,17 @@ export function useGithubImport(options: UseGithubImportOptions = {}) {
       setUserProfile(profile);
       setRepos(fetchedRepos);
 
-      // Select ALL fetched repositories by default so user sees and imports all their projects
+      // Prioritize high-quality repositories: default select non-fork, non-empty, non-archived, non-practice repos
       const defaultSelected = new Set<string>();
       fetchedRepos.forEach((r) => {
-        defaultSelected.add(r.id);
+        if (!r.isFork && !r.isEmpty && !r.isArchived && !r.isPractice) {
+          defaultSelected.add(r.id);
+        }
       });
+      // Fallback: if all repos are forks or practice, select non-empty ones
+      if (defaultSelected.size === 0 && fetchedRepos.length > 0) {
+        fetchedRepos.filter((r) => !r.isEmpty).slice(0, 5).forEach((r) => defaultSelected.add(r.id));
+      }
       setSelectedRepoIds(defaultSelected);
     } catch (err: any) {
       console.error('Failed to sync GitHub repos:', err);

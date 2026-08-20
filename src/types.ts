@@ -33,9 +33,11 @@ export interface ProjectItem {
   id: string;
   title: string;
   description: string;
+  period?: string;
   techStack: string[];
   link?: string;
   demoUrl?: string;
+  liveUrl?: string;
   stars?: number;
   bullets: string[];
   projectType?: string;
@@ -176,6 +178,9 @@ export interface GitHubRepoItem {
   topics: string[];
   updatedAt: string;
   url: string;
+  homepage?: string | null;
+  size?: number;
+  isEmpty?: boolean;
   selected?: boolean;
   packageJsonDeps?: string[];
   readmeSnippet?: string;
@@ -197,6 +202,9 @@ export interface GitHubUserProfile {
   name: string | null;
   avatar_url: string;
   bio: string | null;
+  location?: string | null;
+  blog?: string | null;
+  website?: string | null;
   public_repos: number;
   followers: number;
   html_url: string;

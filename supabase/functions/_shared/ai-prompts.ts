@@ -1,12 +1,12 @@
 /**
- * HireFlow Shared Claude AI System Prompt Rules
- * ─────────────────────────────────────────────
+ * HireFlow Shared AI System Prompt Rules
+ * ───────────────────────────────────────
  * Centralized backend prompt definitions. Every Supabase Edge Function
  * imports these strict rules to ensure consistent, non-hallucinating AI output.
  */
 
-export const STRICT_CLAUDE_RULES = `
-=== STRICT CLAUDE INTEGRITY & NO-FABRICATION RULES ===
+export const STRICT_AI_RULES = `
+=== STRICT INTEGRITY & NO-FABRICATION RULES ===
 
 1. ABSOLUTE PROHIBITION ON FABRICATION:
    You MUST NEVER fabricate, invent, assume, or hallucinate any of the following details:
@@ -37,14 +37,16 @@ export const STRICT_CLAUDE_RULES = `
    - All company names, job titles, institution names, degrees, certifications, technologies, and dates must be preserved exactly as given in the user input.
 `;
 
-export const STRICT_GEMINI_RULES = STRICT_CLAUDE_RULES;
+// Aliases for backward compatibility
+export const STRICT_CLAUDE_RULES = STRICT_AI_RULES;
+export const STRICT_GEMINI_RULES = STRICT_AI_RULES;
 
 /**
- * Helper to build a complete system instruction for Claude edge functions.
+ * Helper to build a complete system instruction for Gemini edge functions.
  */
-export function buildClaudeSystemPrompt(featureTask: string, jsonSchema: string): string {
+export function buildGeminiSystemPrompt(featureTask: string, jsonSchema: string): string {
   return `
-${STRICT_CLAUDE_RULES}
+${STRICT_AI_RULES}
 
 === FEATURE SPECIFIC INSTRUCTIONS ===
 ${featureTask}
@@ -55,6 +57,7 @@ ${jsonSchema}
 `;
 }
 
-export function buildGeminiSystemPrompt(featureTask: string, jsonSchema: string): string {
-  return buildClaudeSystemPrompt(featureTask, jsonSchema);
+// Alias for backward compatibility
+export function buildClaudeSystemPrompt(featureTask: string, jsonSchema: string): string {
+  return buildGeminiSystemPrompt(featureTask, jsonSchema);
 }

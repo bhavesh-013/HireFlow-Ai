@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { buildClaudeSystemPrompt } from '../_shared/ai-prompts.ts';
-import { callClaudeApi, parseJsonFromClaude } from '../_shared/claude-client.ts';
+import { buildGeminiSystemPrompt } from '../_shared/ai-prompts.ts';
+import { callGeminiApi, parseJsonFromGemini } from '../_shared/gemini-client.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,17 +37,17 @@ REMINDER: Never invent metrics or companies. If suggesting metric impact without
   "wordCount": 42
 }`;
 
-    const systemPrompt = buildClaudeSystemPrompt(featureTask, jsonSchema);
+    const systemPrompt = buildGeminiSystemPrompt(featureTask, jsonSchema);
     const userPrompt = `Current Summary: ${summary || 'No summary provided. Rephrase available role details into a concise opening profile statement.'}`;
 
-    const text = await callClaudeApi({
+    const text = await callGeminiApi({
       systemPrompt,
       userPrompt,
       temperature: 0.3,
       maxTokens: 2048,
     });
 
-    const parsed = parseJsonFromClaude(text);
+    const parsed = parseJsonFromGemini(text);
 
     return new Response(JSON.stringify({ success: true, ...parsed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

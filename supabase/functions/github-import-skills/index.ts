@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { buildClaudeSystemPrompt } from '../_shared/ai-prompts.ts';
-import { callClaudeApi, parseJsonFromClaude } from '../_shared/claude-client.ts';
+import { buildGeminiSystemPrompt } from '../_shared/ai-prompts.ts';
+import { callGeminiApi, parseJsonFromGemini } from '../_shared/gemini-client.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,25 +15,49 @@ serve(async (req) => {
   try {
     const { repos, targetJobDescription } = await req.json();
 
-    const featureTask = `Analyze candidate's GitHub repositories and extract tech stack skills. Group by category and format for ATS resume.`;
+    const featureTask = `Analyze candidate's GitHub repositories evidence (package manifests, languages, topics, dependencies) and extract verified tech stack skills.
+
+STRICT RULES:
+1. Use ONLY the supplied GitHub evidence. If a technology is not supported by actual evidence in the repository data, omit it. Never guess or invent skills.
+2. Categorize all extracted skills into the 9 standard categories:
+   - Languages
+   - Frontend
+   - Backend
+   - Databases
+   - Cloud
+   - DevOps
+   - Testing
+   - Tools
+   - AI/ML
+3. Standardize skill names cleanly (e.g. JS -> JavaScript, TS -> TypeScript, React.js -> React).`;
 
     const jsonSchema = `{
-  "skills": ["TypeScript", "React", "Node.js"],
-  "formattedSkills": "Frontend: React, TypeScript | Backend: Node.js, Express",
-  "topLanguages": ["TypeScript", "JavaScript"]
+  "skills": ["TypeScript", "React", "Node.js", "PostgreSQL", "Docker"],
+  "formattedSkills": "Languages: TypeScript, JavaScript | Frontend: React | Backend: Node.js | Databases: PostgreSQL | DevOps: Docker",
+  "categorizedSkills": {
+    "Languages": ["TypeScript", "JavaScript"],
+    "Frontend": ["React"],
+    "Backend": ["Node.js"],
+    "Databases": ["PostgreSQL"],
+    "Cloud": ["Vercel"],
+    "DevOps": ["Docker"],
+    "Testing": ["Jest"],
+    "Tools": ["Git", "Vite"],
+    "AI/ML": ["Gemini API"]
+  }
 }`;
 
-    const systemPrompt = buildClaudeSystemPrompt(featureTask, jsonSchema);
+    const systemPrompt = buildGeminiSystemPrompt(featureTask, jsonSchema);
     const userPrompt = `GitHub Repositories:\n${JSON.stringify(repos || [], null, 2)}\n\n${targetJobDescription ? `Target Job Description:\n${targetJobDescription}` : ''}`;
 
-    const text = await callClaudeApi({
+    const text = await callGeminiApi({
       systemPrompt,
       userPrompt,
       temperature: 0.2,
       maxTokens: 2048,
     });
 
-    const parsed = parseJsonFromClaude(text);
+    const parsed = parseJsonFromGemini(text);
 
     return new Response(JSON.stringify({ success: true, ...parsed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -107,7 +107,7 @@ function extractPdfLiteralStrings(rawBytes: string): string {
   const matches = rawBytes.match(/\(([^()]{2,200})\)/g) || [];
   const lines: string[] = [];
 
-  matches.forEach((m) => {
+  (matches as string[]).forEach((m: string) => {
     const text = m
       .slice(1, -1)
       .replace(/\\([()])/g, '$1')
