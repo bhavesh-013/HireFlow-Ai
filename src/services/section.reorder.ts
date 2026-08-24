@@ -15,13 +15,13 @@ export interface SectionOrderRecommendation {
   reason: string;
 }
 
-export const FRESHER_ORDER = ['header', 'summary', 'skills', 'tools_tech', 'education', 'courses', 'achievements', 'projects', 'certificates', 'tech_strengths', 'languages', 'interests', 'declaration'];
+export const FRESHER_ORDER = ['header', 'summary', 'skills', 'education', 'achievements', 'projects', 'certificates', 'languages', 'interests'];
 export const EXPERIENCED_ORDER = ['header', 'summary', 'experience', 'projects', 'achievements', 'education', 'skills'];
 const SENIOR_ORDER = EXPERIENCED_ORDER;
 
 /** Section keys that render as empty, user-fillable custom sections rather
  * than one of the native resume fields (experience, skills, etc). */
-const CUSTOM_SECTION_KEYS = new Set(['tools_tech', 'courses', 'tech_strengths', 'languages', 'interests', 'declaration']);
+const CUSTOM_SECTION_KEYS = new Set(['languages', 'interests']);
 
 /**
  * Builds the default Section Navigator items for a resume, given the
@@ -50,32 +50,24 @@ export function getDefaultSectionItems(resumeType: ResumeType): SectionNavItem[]
     summary: 'Summary',
     education: 'Education',
     skills: 'Skills',
-    tools_tech: 'Tools & Technologies',
-    courses: 'Courses',
     projects: 'Projects',
     experience: 'Experience',
     certificates: 'Certifications',
     achievements: 'Achievements',
-    tech_strengths: 'Technical Strengths',
     languages: 'Languages',
     interests: 'Interests',
-    declaration: 'Declaration',
   };
   const typeFor: Record<string, SectionNavItem['type']> = {
     header: 'personal',
     summary: 'summary',
     education: 'education',
     skills: 'skills',
-    tools_tech: 'custom',
-    courses: 'custom',
     projects: 'projects',
     experience: 'experience',
     certificates: 'certificates',
     achievements: 'achievements',
-    tech_strengths: 'custom',
     languages: 'custom',
     interests: 'custom',
-    declaration: 'custom',
   };
 
   const items: SectionNavItem[] = order.map((key, idx) => ({
@@ -101,19 +93,15 @@ export function getDefaultSectionItems(resumeType: ResumeType): SectionNavItem[]
 /**
  * Empty, user-fillable custom sections matching the extra structural
  * sections in getDefaultSectionItems('fresher') (Tools & Technologies,
- * Courses, Technical Strengths, Languages, Interests, Declaration).
+ * sections in getDefaultSectionItems('fresher') (Languages, Interests).
  * Every `items` array starts empty — the user types their own content
  * into these, nothing is pre-filled with sample text.
  */
 export function getDefaultCustomSections(resumeType: ResumeType): CustomSectionData[] {
   if (resumeType !== 'fresher') return [];
   return [
-    { id: 'sec_tools_tech', title: 'Tools & Technologies', items: [] },
-    { id: 'sec_courses', title: 'Courses', items: [] },
-    { id: 'sec_tech_strengths', title: 'Technical Strengths', items: [] },
     { id: 'sec_languages', title: 'Languages', items: [] },
     { id: 'sec_interests', title: 'Interests', items: [] },
-    { id: 'sec_declaration', title: 'Declaration', items: [] },
   ];
 }
 

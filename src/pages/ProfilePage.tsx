@@ -20,9 +20,11 @@ import {
   CheckCircle2,
   Info,
   Sliders,
-  SlidersHorizontal
+  SlidersHorizontal,
+  AlertCircle
 } from 'lucide-react';
 import { getStoredUser } from '../lib/api';
+import { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } from '../utils/urlValidator';
 
 export default function ProfilePage() {
   const storedUser = getStoredUser();
@@ -41,9 +43,7 @@ export default function ProfilePage() {
     linkedin: storedUser?.linkedin || '',
     website: storedUser?.website || '',
     twitter: storedUser?.twitter || '',
-    avatar: storedUser?.avatar_url
-      ? storedUser.avatar_url
-      : (storedUser?.full_name || storedUser?.name || 'U').charAt(0).toUpperCase(),
+    avatar: storedUser?.avatar_url || '',
     aiTone: 'STAR Impact Metrics',
     atsStrictness: 'High (Strict Keyword Match)',
     emailNotifications: true
@@ -51,6 +51,27 @@ export default function ProfilePage() {
 
   const [profile, setProfile] = useState(initialProfileState);
   const [initialState, setInitialState] = useState(initialProfileState);
+
+  const [urlErrors, setUrlErrors] = useState<{
+    github?: string | null;
+    linkedin?: string | null;
+    website?: string | null;
+  }>({});
+
+  const handleProfileGithubChange = (val: string) => {
+    setProfile((prev) => ({ ...prev, github: val }));
+    setUrlErrors((prev) => ({ ...prev, github: validateGitHubUrl(val).error }));
+  };
+
+  const handleProfileLinkedinChange = (val: string) => {
+    setProfile((prev) => ({ ...prev, linkedin: val }));
+    setUrlErrors((prev) => ({ ...prev, linkedin: validateLinkedInUrl(val).error }));
+  };
+
+  const handleProfileWebsiteChange = (val: string) => {
+    setProfile((prev) => ({ ...prev, website: val }));
+    setUrlErrors((prev) => ({ ...prev, website: validatePortfolioUrl(val).error }));
+  };
 
   const [activeSection, setActiveSection] = useState('personal');
   const [isImprovingBio, setIsImprovingBio] = useState(false);
@@ -484,11 +505,21 @@ export default function ProfilePage() {
                   <input
                     type="url"
                     value={profile.github}
-                    onChange={(e) => setProfile({ ...profile, github: e.target.value })}
-                    className="w-full h-12 bg-slate-50/70 border border-slate-200 rounded-xl pl-10 pr-3.5 text-xs font-semibold text-[#0B192C] focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 focus:outline-none transition-all"
+                    onChange={(e) => handleProfileGithubChange(e.target.value)}
+                    className={`w-full h-12 bg-slate-50/70 border rounded-xl pl-10 pr-3.5 text-xs font-semibold text-[#0B192C] focus:bg-white focus:outline-none transition-all ${
+                      urlErrors.github
+                        ? 'border-red-400 focus:border-red-500 ring-2 ring-red-400/20'
+                        : 'border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10'
+                    }`}
                     placeholder="https://github.com/..."
                   />
                 </div>
+                {urlErrors.github && (
+                  <p className="text-[11px] text-red-500 flex items-center gap-1 font-medium">
+                    <AlertCircle size={12} className="shrink-0" />
+                    <span>{urlErrors.github}</span>
+                  </p>
+                )}
               </div>
 
               {/* LinkedIn */}
@@ -499,11 +530,21 @@ export default function ProfilePage() {
                   <input
                     type="url"
                     value={profile.linkedin}
-                    onChange={(e) => setProfile({ ...profile, linkedin: e.target.value })}
-                    className="w-full h-12 bg-slate-50/70 border border-slate-200 rounded-xl pl-10 pr-3.5 text-xs font-semibold text-[#0B192C] focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 focus:outline-none transition-all"
+                    onChange={(e) => handleProfileLinkedinChange(e.target.value)}
+                    className={`w-full h-12 bg-slate-50/70 border rounded-xl pl-10 pr-3.5 text-xs font-semibold text-[#0B192C] focus:bg-white focus:outline-none transition-all ${
+                      urlErrors.linkedin
+                        ? 'border-red-400 focus:border-red-500 ring-2 ring-red-400/20'
+                        : 'border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10'
+                    }`}
                     placeholder="https://linkedin.com/in/..."
                   />
                 </div>
+                {urlErrors.linkedin && (
+                  <p className="text-[11px] text-red-500 flex items-center gap-1 font-medium">
+                    <AlertCircle size={12} className="shrink-0" />
+                    <span>{urlErrors.linkedin}</span>
+                  </p>
+                )}
               </div>
 
               {/* Portfolio */}
@@ -514,11 +555,21 @@ export default function ProfilePage() {
                   <input
                     type="url"
                     value={profile.website}
-                    onChange={(e) => setProfile({ ...profile, website: e.target.value })}
-                    className="w-full h-12 bg-slate-50/70 border border-slate-200 rounded-xl pl-10 pr-3.5 text-xs font-semibold text-[#0B192C] focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 focus:outline-none transition-all"
+                    onChange={(e) => handleProfileWebsiteChange(e.target.value)}
+                    className={`w-full h-12 bg-slate-50/70 border rounded-xl pl-10 pr-3.5 text-xs font-semibold text-[#0B192C] focus:bg-white focus:outline-none transition-all ${
+                      urlErrors.website
+                        ? 'border-red-400 focus:border-red-500 ring-2 ring-red-400/20'
+                        : 'border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10'
+                    }`}
                     placeholder="https://yourportfolio.dev"
                   />
                 </div>
+                {urlErrors.website && (
+                  <p className="text-[11px] text-red-500 flex items-center gap-1 font-medium">
+                    <AlertCircle size={12} className="shrink-0" />
+                    <span>{urlErrors.website}</span>
+                  </p>
+                )}
               </div>
 
               {/* X (Twitter) */}

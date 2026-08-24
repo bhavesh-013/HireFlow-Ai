@@ -216,34 +216,66 @@ export default function ExperiencedDocumentView({
           key={sec.id}
           id={`doc-sec-${sec.id}`}
           onClick={() => handleSelectSection(sec.id)}
-          className={`mb-4 cursor-pointer transition-all rounded-lg p-2 ${
-            activeSection === sec.id ? 'ring-2 ring-blue-500/50 bg-blue-50/20' : 'hover:bg-slate-50/60'
+          className={`mb-4 cursor-pointer transition-all rounded p-1 ${
+            activeSection === sec.id ? 'ring-2 ring-blue-500/50 bg-blue-50/20' : 'hover:bg-slate-50/50'
           }`}
         >
-          <div className="border-b border-slate-900 pb-0.5 mb-2.5">
-            <h2 className="text-sm font-serif font-bold text-slate-900 tracking-tight">
-              {sec.title}
+          {/* Clean ATS Section Heading without icon */}
+          <div className="border-b border-slate-900 pb-0.5 mb-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+              {sec.title || 'EDUCATION'}
             </h2>
           </div>
 
-          <div className="space-y-1.5 font-serif text-xs">
-            {displayEducation.map((edu) => (
-              <div key={edu.id} className="grid grid-cols-12 gap-2 items-baseline">
-                {/* Date range left */}
-                <div className="col-span-3 text-[11px] text-slate-700 font-mono">
-                  {edu.period || ''}
+          <div className="space-y-2 text-xs mt-1.5">
+            {displayEducation.map((edu) => {
+              const startYear = edu.startYear || (edu.period ? edu.period.split(/[-–—]/)[0]?.trim() : '');
+              const endYear = edu.endYear || (edu.period ? edu.period.split(/[-–—]/)[1]?.trim() : '');
+              const periodText = (startYear && endYear) ? `${startYear} – ${endYear}` : (edu.period || startYear || endYear || '');
+
+              const rawGpa = (edu.gpa || '').trim();
+              const formattedGpa = rawGpa
+                ? (/^(gpa|cgpa|grade|marks)/i.test(rawGpa) || rawGpa.includes('%')
+                    ? rawGpa
+                    : `CGPA: ${rawGpa}`)
+                : null;
+
+              const courseworkClean = (edu.coursework || edu.highlights || '').trim().replace(/^relevant coursework:\s*|^courses:\s*/i, '');
+
+              return (
+                <div key={edu.id} className="space-y-0.5">
+                  {/* Row 1: Bold Institution (Left) + Right-aligned Dates */}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-bold text-slate-900 leading-snug">{edu.institution}</span>
+                    {periodText && (
+                      <span className="font-mono text-slate-700 text-[11px] shrink-0 text-right">
+                        {periodText}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Row 2: Degree directly below Institution (Left) + Right-aligned GPA */}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-slate-800 leading-snug">{edu.degree}</span>
+                    {formattedGpa && (
+                      <span className="text-slate-800 text-[11px] font-mono shrink-0 text-right">
+                        {formattedGpa}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Row 3: Compact Courses bullet (only when provided) */}
+                  {courseworkClean && (
+                    <ul className="list-disc list-outside ml-3.5 space-y-0 text-[11px] text-slate-700 pt-0.5">
+                      <li className="leading-snug">
+                        <span className="font-semibold text-slate-800">Courses: </span>
+                        {courseworkClean}
+                      </li>
+                    </ul>
+                  )}
                 </div>
-                {/* Degree & Institution middle */}
-                <div className="col-span-6 text-slate-900">
-                  <span className="font-bold">{edu.degree}</span>
-                  {edu.institution ? ` at ${edu.institution}` : ''}
-                </div>
-                {/* Grade / CGPA right */}
-                <div className="col-span-3 text-right text-[11px] text-slate-800">
-                  {edu.highlights || (edu.gpa ? `Grade: ${edu.gpa}` : '')}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       );

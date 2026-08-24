@@ -21,11 +21,15 @@ export interface ExperienceItem {
 
 export interface EducationItem {
   id: string;
-  degree: string;
-  institution: string;
-  period: string;
+  degree: string;             // Degree / Field of Study (Required)
+  institution: string;        // College / University (Required)
+  startYear?: string;         // Start Year (Required)
+  endYear?: string;           // End Year / Expected Graduation (Required)
+  period: string;             // Formatted Year range
   location?: string;
-  gpa?: string;
+  gpa?: string;               // GPA / Percentage (Optional)
+  coursework?: string;        // Relevant Coursework (Optional)
+  currentSem?: string;        // Builder/profile only
   highlights?: string;
 }
 
@@ -357,6 +361,8 @@ export interface ATSFullReport {
   scoreLabel: string;
   /** Per-category breakdown */
   categories: Record<ATSCategoryKey, ATSCategoryResult>;
+  /** The 8 standard categories evaluated by the ATS engine */
+  standardCategories?: ATSCategoryResult[];
   /** Complete list of rule results evaluated by deterministic engine */
   ruleResults: ATSRuleResult[];
   /** Breakdown of points: totalEarned and totalMax */

@@ -46,8 +46,12 @@ import {
   GripVertical,
   Copy,
   Layers,
-  FolderPlus
+  FolderPlus,
+  Linkedin,
+  Wand2
 } from 'lucide-react';
+import { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } from '../utils/urlValidator';
+import { extractResumeMetrics, fixSummaryGrammar, improveSummaryAts } from '../utils/summaryAi';
 import { resumes as resumesApi, ai as aiApi, ApiRequestError, isAuthenticated, getStoredUser } from '../lib/api';
 import { rememberCurrentLocationForRedirect } from '../lib/authGate';
 import LoginRequiredModal from '../components/app/LoginRequiredModal';
@@ -202,6 +206,36 @@ export default function ResumeEditorPage() {
     linkedin: importedData?.personalInfo?.linkedin || currentUser?.linkedin || '',
     summary: importedData?.personalInfo?.summary || '',
   });
+
+  const [urlErrors, setUrlErrors] = useState<{
+    linkedin?: string | null;
+    github?: string | null;
+    website?: string | null;
+  }>({});
+
+  const [summaryPreviewDiff, setSummaryPreviewDiff] = useState<{
+    original: string;
+    suggested: string;
+    type: string;
+  } | null>(null);
+
+  const handleLinkedinChange = (value: string) => {
+    setPersonalInfo((prev) => ({ ...prev, linkedin: value }));
+    const res = validateLinkedInUrl(value);
+    setUrlErrors((prev) => ({ ...prev, linkedin: res.error }));
+  };
+
+  const handleGithubChange = (value: string) => {
+    setPersonalInfo((prev) => ({ ...prev, github: value }));
+    const res = validateGitHubUrl(value);
+    setUrlErrors((prev) => ({ ...prev, github: res.error }));
+  };
+
+  const handleWebsiteChange = (value: string) => {
+    setPersonalInfo((prev) => ({ ...prev, website: value }));
+    const res = validatePortfolioUrl(value);
+    setUrlErrors((prev) => ({ ...prev, website: res.error }));
+  };
 
   const [experiences, setExperiences] = useState<ExperienceItem[]>(
     importedData?.experiences && importedData.experiences.length > 0
@@ -395,6 +429,11 @@ export default function ResumeEditorPage() {
           linkedin: mapped.personalInfo.linkedin || '',
           summary: mapped.personalInfo.summary || '',
         });
+        setUrlErrors({
+          linkedin: validateLinkedInUrl(mapped.personalInfo.linkedin).error,
+          github: validateGitHubUrl(mapped.personalInfo.github).error,
+          website: validatePortfolioUrl(mapped.personalInfo.website).error,
+        });
         if (mapped.experiences.length > 0) setExperiences(mapped.experiences);
         if (mapped.education.length > 0) setEducation(mapped.education);
         if (mapped.skills) setSkills(mapped.skills);
@@ -444,11 +483,11 @@ export default function ResumeEditorPage() {
   const coachSuggestions = [
     {
       id: 'sug_summary',
-      title: 'Rewrite Summary',
+      title: 'AI Improve Summary',
       section: 'summary',
       atsGain: 4,
-      description: 'AI rewrites your summary based on your actual resume content.',
-      apply: () => handleRewriteSummaryWithAI(),
+      description: 'AI optimizes your summary for ATS structure and keywords.',
+      apply: () => handleAiImproveSummary(),
     },
     {
       id: 'sug_metrics',
@@ -966,55 +1005,118 @@ export default function ResumeEditorPage() {
     }
   };
 
-  const handleRewriteSummaryWithAI = async () => {
-    if (isAiWorking) return;
+  const handleAiImproveSummary = async () => {
+    if (isAiWorking || !personalInfo.summary.trim()) return;
     setIsAiWorking(true);
     try {
+      const snapshot = currentResumeDataSnapshot();
       const result: any = await aiApi.suggest({
-        resumeData: currentResumeDataSnapshot(),
+        resumeData: snapshot,
         section: 'summary',
+        promptDetails:
+          'Optimize existing summary for ATS-friendly structure and keywords, while preserving all factual information. Never invent skills, experience, achievements, or numbers.',
       });
-      if (result?.enhancedSummary) {
-        setPersonalInfo((prev) => ({ ...prev, summary: result.enhancedSummary }));
-        triggerAiGreenHighlight('summary');
-        showToast('Summary rewritten by AI based on your actual resume.');
+      const improved =
+        result?.enhancedSummary ||
+        result?.suggested ||
+        improveSummaryAts(personalInfo.summary, targetRole || personalInfo.jobTitle);
+      if (improved && improved.trim() !== personalInfo.summary.trim()) {
+        setSummaryPreviewDiff({
+          original: personalInfo.summary,
+          suggested: improved.trim(),
+          type: 'AI Improve',
+        });
       } else {
-        showToast('AI did not return a summary — please try again.');
+        showToast('Summary is already optimal!');
       }
     } catch (err) {
-      showToast(
-        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
-      );
+      const fallback = improveSummaryAts(personalInfo.summary, targetRole || personalInfo.jobTitle);
+      if (fallback && fallback.trim() !== personalInfo.summary.trim()) {
+        setSummaryPreviewDiff({
+          original: personalInfo.summary,
+          suggested: fallback.trim(),
+          type: 'AI Improve',
+        });
+      } else {
+        showToast(err instanceof ApiRequestError ? err.message : 'Could not optimize summary right now.');
+      }
+    } finally {
+      setIsAiWorking(false);
+    }
+  };
+
+  const handleFixSummaryGrammar = async () => {
+    if (isAiWorking || !personalInfo.summary.trim()) return;
+    setIsAiWorking(true);
+    try {
+      const snapshot = currentResumeDataSnapshot();
+      const result: any = await aiApi.suggest({
+        resumeData: snapshot,
+        section: 'summary',
+        promptDetails:
+          'Correct ONLY grammar, spelling, punctuation, and sentence clarity in this exact summary. Do NOT add any new facts, metrics, or numbers.',
+      });
+      const fixed = result?.enhancedSummary || result?.suggested || fixSummaryGrammar(personalInfo.summary);
+      if (fixed && fixed.trim() !== personalInfo.summary.trim()) {
+        setSummaryPreviewDiff({
+          original: personalInfo.summary,
+          suggested: fixed.trim(),
+          type: 'Fix Grammar',
+        });
+      } else {
+        showToast('No grammar or spelling issues detected in summary.');
+      }
+    } catch (err) {
+      const fallback = fixSummaryGrammar(personalInfo.summary);
+      if (fallback && fallback.trim() !== personalInfo.summary.trim()) {
+        setSummaryPreviewDiff({
+          original: personalInfo.summary,
+          suggested: fallback.trim(),
+          type: 'Fix Grammar',
+        });
+      } else {
+        showToast('No grammar or spelling issues detected in summary.');
+      }
     } finally {
       setIsAiWorking(false);
     }
   };
 
   const handleAddMetricsWithAI = async () => {
-    if (isAiWorking) return;
+    if (isAiWorking || !personalInfo.summary.trim()) return;
+
+    const snapshot = currentResumeDataSnapshot();
+    const existingMetrics = extractResumeMetrics(snapshot);
+
+    if (existingMetrics.length === 0) {
+      showToast('No existing metrics or numbers found in your resume to include.');
+      return;
+    }
+
     setIsAiWorking(true);
     try {
       const result: any = await aiApi.suggest({
-        resumeData: currentResumeDataSnapshot(),
+        resumeData: snapshot,
         section: 'summary',
-        promptDetails:
-          'Suggest one additional, quantified, metrics-driven sentence to strengthen this summary.',
+        promptDetails: `Integrate ONLY these exact metrics/numbers already present in the resume into the summary text: ${existingMetrics.join(
+          ', '
+        )}. Do NOT invent any new numbers or facts.`,
       });
-      const addition = result?.suggestions?.[0];
-      if (addition) {
-        setPersonalInfo((prev) => ({
-          ...prev,
-          summary: prev.summary ? `${prev.summary} ${addition}` : addition,
-        }));
-        triggerAiGreenHighlight('summary');
-        showToast('Added an AI-suggested metrics line to your summary.');
+      const updated =
+        result?.enhancedSummary ||
+        result?.suggested ||
+        `${personalInfo.summary.replace(/[.!?]$/, '')} with tracked impact across ${existingMetrics.join(', ')}.`;
+      if (updated && updated.trim() !== personalInfo.summary.trim()) {
+        setSummaryPreviewDiff({
+          original: personalInfo.summary,
+          suggested: updated.trim(),
+          type: 'Add Metrics',
+        });
       } else {
-        showToast('AI did not return a suggestion — please try again.');
+        showToast('Summary already incorporates available metrics.');
       }
     } catch (err) {
-      showToast(
-        err instanceof ApiRequestError ? err.message : 'Could not reach the AI service.'
-      );
+      showToast(err instanceof ApiRequestError ? err.message : 'Could not analyze metrics right now.');
     } finally {
       setIsAiWorking(false);
     }
@@ -1715,13 +1817,7 @@ export default function ResumeEditorPage() {
                             Hidden
                           </span>
                         )}
-                        {item.isCustom && !isHidden && (
-                          <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold shrink-0 ${
-                            isSelected ? 'bg-blue-950 text-blue-300 border border-blue-800' : 'bg-blue-50 text-blue-700'
-                          }`}>
-                            Custom
-                          </span>
-                        )}
+
                       </div>
 
                       {/* Right Action Icons: Move Up/Down, Hide/Show, Duplicate, Delete */}
@@ -1938,27 +2034,76 @@ export default function ResumeEditorPage() {
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        GitHub Profile
-                      </label>
-                      <input
-                        type="text"
-                        value={personalInfo.github}
-                        onChange={(e) => setPersonalInfo({ ...personalInfo, github: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        Portfolio Website
-                      </label>
-                      <input
-                        type="text"
-                        value={personalInfo.website}
-                        onChange={(e) => setPersonalInfo({ ...personalInfo, website: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:border-blue-600 focus:outline-none"
-                      />
+                    <div className="col-span-1 sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <Linkedin size={11} className="text-blue-600" />
+                          LinkedIn Profile
+                        </label>
+                        <input
+                          type="text"
+                          value={personalInfo.linkedin || ''}
+                          onChange={(e) => handleLinkedinChange(e.target.value)}
+                          placeholder="linkedin.com/in/username"
+                          className={`w-full bg-slate-50 border rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:outline-none transition-colors ${
+                            urlErrors.linkedin
+                              ? 'border-red-400 focus:border-red-500 ring-1 ring-red-400/20'
+                              : 'border-slate-200 focus:border-blue-600'
+                          }`}
+                        />
+                        {urlErrors.linkedin && (
+                          <p className="text-[10px] text-red-500 mt-1 flex items-start gap-1 font-medium">
+                            <AlertCircle size={11} className="shrink-0 mt-0.5" />
+                            <span>{urlErrors.linkedin}</span>
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <Github size={11} className="text-slate-700" />
+                          GitHub Profile
+                        </label>
+                        <input
+                          type="text"
+                          value={personalInfo.github || ''}
+                          onChange={(e) => handleGithubChange(e.target.value)}
+                          placeholder="github.com/username"
+                          className={`w-full bg-slate-50 border rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:outline-none transition-colors ${
+                            urlErrors.github
+                              ? 'border-red-400 focus:border-red-500 ring-1 ring-red-400/20'
+                              : 'border-slate-200 focus:border-blue-600'
+                          }`}
+                        />
+                        {urlErrors.github && (
+                          <p className="text-[10px] text-red-500 mt-1 flex items-start gap-1 font-medium">
+                            <AlertCircle size={11} className="shrink-0 mt-0.5" />
+                            <span>{urlErrors.github}</span>
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <Globe size={11} className="text-emerald-600" />
+                          Portfolio Website
+                        </label>
+                        <input
+                          type="text"
+                          value={personalInfo.website || ''}
+                          onChange={(e) => handleWebsiteChange(e.target.value)}
+                          placeholder="myportfolio.dev"
+                          className={`w-full bg-slate-50 border rounded-lg px-3 py-2 text-xs text-[#0B192C] focus:bg-white focus:outline-none transition-colors ${
+                            urlErrors.website
+                              ? 'border-red-400 focus:border-red-500 ring-1 ring-red-400/20'
+                              : 'border-slate-200 focus:border-blue-600'
+                          }`}
+                        />
+                        {urlErrors.website && (
+                          <p className="text-[10px] text-red-500 mt-1 flex items-start gap-1 font-medium">
+                            <AlertCircle size={11} className="shrink-0 mt-0.5" />
+                            <span>{urlErrors.website}</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1967,16 +2112,24 @@ export default function ResumeEditorPage() {
                     <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => {
+                          const targetWeb = currentUser.website || personalInfo.website;
+                          const targetGit = currentUser.github || personalInfo.github;
+                          const targetLin = currentUser.linkedin || personalInfo.linkedin;
                           setPersonalInfo((prev) => ({
                             ...prev,
                             fullName: currentUser.full_name || currentUser.name || prev.fullName,
                             email: currentUser.email || prev.email,
                             phone: currentUser.phone || prev.phone,
                             location: currentUser.location || prev.location,
-                            website: currentUser.website || prev.website,
-                            github: currentUser.github || prev.github,
-                            linkedin: currentUser.linkedin || prev.linkedin,
+                            website: targetWeb,
+                            github: targetGit,
+                            linkedin: targetLin,
                           }));
+                          setUrlErrors({
+                            linkedin: validateLinkedInUrl(targetLin).error,
+                            github: validateGitHubUrl(targetGit).error,
+                            website: validatePortfolioUrl(targetWeb).error,
+                          });
                           showToast('Auto-filled contact details from your account profile!');
                         }}
                         className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
@@ -2007,23 +2160,66 @@ export default function ResumeEditorPage() {
                   {/* Contextual AI Toolbar for Summary */}
                   <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
                     <button
-                      onClick={handleRewriteSummaryWithAI}
-                      disabled={isAiWorking}
-                      className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 disabled:cursor-not-allowed text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                      onClick={handleFixSummaryGrammar}
+                      disabled={isAiWorking || !personalInfo.summary.trim()}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
-                      <Sparkles size={13} className="text-blue-600" />
-                      <span>{isAiWorking ? 'Thinking...' : 'Rewrite with AI'}</span>
+                      <Check size={13} className="text-emerald-600" />
+                      <span>{isAiWorking ? 'Thinking...' : 'Fix Grammar'}</span>
                     </button>
 
                     <button
-                      onClick={handleAddMetricsWithAI}
-                      disabled={isAiWorking}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      onClick={handleAiImproveSummary}
+                      disabled={isAiWorking || !personalInfo.summary.trim()}
+                      className="px-3 py-1.5 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
                     >
-                      <Zap size={13} className="text-amber-500" />
-                      <span>{isAiWorking ? 'Thinking...' : 'Add Metrics'}</span>
+                      <Wand2 size={13} className="text-blue-300" />
+                      <span>{isAiWorking ? 'Improving...' : 'AI Improve'}</span>
                     </button>
                   </div>
+
+                  {/* Minimal Before -> After Result Panel */}
+                  {summaryPreviewDiff && (
+                    <div className="p-3 bg-white border border-slate-200 rounded-lg text-xs space-y-2.5 shadow-2xs transition-all">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                        <span>Proposed Change ({summaryPreviewDiff.type})</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div className="p-2 bg-red-50/60 border border-red-200 rounded-md">
+                          <span className="block text-[9px] font-bold text-red-600 uppercase tracking-wider mb-0.5">Original</span>
+                          <p className="text-slate-700 line-through opacity-80 leading-snug">{summaryPreviewDiff.original}</p>
+                        </div>
+                        <div className="p-2 bg-emerald-50/60 border border-emerald-200 rounded-md">
+                          <span className="block text-[9px] font-bold text-emerald-600 uppercase tracking-wider mb-0.5">Proposed</span>
+                          <p className="text-slate-900 font-semibold leading-snug">{summaryPreviewDiff.suggested}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setSummaryPreviewDiff(null)}
+                          className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-md border border-slate-200 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPersonalInfo((prev) => ({ ...prev, summary: summaryPreviewDiff.suggested }));
+                            setSummaryPreviewDiff(null);
+                            triggerAiGreenHighlight('summary');
+                            showToast('Summary updated!');
+                          }}
+                          className="px-3 py-1 bg-[#0B192C] hover:bg-slate-800 text-white font-semibold text-xs rounded-md flex items-center gap-1 cursor-pointer"
+                        >
+                          <Check size={12} />
+                          <span>Apply</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2375,7 +2571,7 @@ export default function ResumeEditorPage() {
                 <div className="space-y-3 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                      Education & Qualifications
+                      Education & Qualifications ({education.length})
                     </span>
                     <button
                       onClick={() => {
@@ -2383,7 +2579,11 @@ export default function ResumeEditorPage() {
                           id: `edu_${Date.now()}`,
                           degree: '',
                           institution: '',
+                          startYear: '',
+                          endYear: '',
                           period: '',
+                          gpa: '',
+                          coursework: '',
                         };
                         setEducation([...education, newEdu]);
                       }}
@@ -2393,32 +2593,157 @@ export default function ResumeEditorPage() {
                     </button>
                   </div>
 
-                  {education.map((edu, eIdx) => (
-                    <div key={edu.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={edu.degree}
-                          onChange={(e) => {
-                            const updated = [...education];
-                            updated[eIdx].degree = e.target.value;
-                            setEducation(updated);
-                          }}
-                          className="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-bold text-[#0B192C]"
-                        />
-                        <input
-                          type="text"
-                          value={edu.institution}
-                          onChange={(e) => {
-                            const updated = [...education];
-                            updated[eIdx].institution = e.target.value;
-                            setEducation(updated);
-                          }}
-                          className="bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-700"
-                        />
+                  {education.length === 0 && (
+                    <p className="text-[11px] text-slate-400 italic py-2">
+                      No education entries added. Click "Add Education" to add your college/school details.
+                    </p>
+                  )}
+
+                  {education.map((edu, eIdx) => {
+                    const parsedStart = edu.startYear || (edu.period ? edu.period.split(/[-–—]/)[0]?.trim() : '');
+                    const parsedEnd = edu.endYear || (edu.period ? edu.period.split(/[-–—]/)[1]?.trim() : '');
+
+                    return (
+                      <div key={edu.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
+                          <span className="font-bold text-[#0B192C] text-xs truncate">
+                            {edu.degree || edu.institution ? `${edu.degree || 'Degree'} ${edu.institution ? `at ${edu.institution}` : ''}` : `Education Entry #${eIdx + 1}`}
+                          </span>
+                          <button
+                            onClick={() => setEducation(education.filter((item) => item.id !== edu.id))}
+                            className="p-1 text-slate-400 hover:text-red-600 transition-colors cursor-pointer shrink-0"
+                            title="Delete education entry"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        {/* Row 1: Degree / Field of Study | College / University */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                              <span>Degree / Field of Study <span className="text-red-500 font-black">*</span></span>
+                              <span className="text-[9px] font-semibold text-red-600 font-mono">Required</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. B.Tech in Computer Science"
+                              value={edu.degree}
+                              onChange={(e) => {
+                                const updated = [...education];
+                                updated[eIdx].degree = e.target.value;
+                                setEducation(updated);
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-blue-600 rounded px-2.5 py-1.5 text-xs font-bold text-[#0B192C] focus:outline-none transition-colors"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                              <span>College / University <span className="text-red-500 font-black">*</span></span>
+                              <span className="text-[9px] font-semibold text-red-600 font-mono">Required</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. PW Institute of Innovation"
+                              value={edu.institution}
+                              onChange={(e) => {
+                                const updated = [...education];
+                                updated[eIdx].institution = e.target.value;
+                                setEducation(updated);
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-blue-600 rounded px-2.5 py-1.5 text-xs text-[#0B192C] focus:outline-none transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Row 2: Start Year | End Year / Expected Graduation */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                              <span>Start Year <span className="text-red-500 font-black">*</span></span>
+                              <span className="text-[9px] font-semibold text-red-600 font-mono">Required</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 2025"
+                              value={parsedStart}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const updated = [...education];
+                                updated[eIdx].startYear = val;
+                                const curEnd = updated[eIdx].endYear || parsedEnd;
+                                updated[eIdx].period = (val && curEnd) ? `${val} – ${curEnd}` : (val || curEnd || '');
+                                setEducation(updated);
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-blue-600 rounded px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none transition-colors"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                              <span>End Year / Expected Graduation <span className="text-red-500 font-black">*</span></span>
+                              <span className="text-[9px] font-semibold text-red-600 font-mono">Required</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 2029"
+                              value={parsedEnd}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const updated = [...education];
+                                updated[eIdx].endYear = val;
+                                const curStart = updated[eIdx].startYear || parsedStart;
+                                updated[eIdx].period = (curStart && val) ? `${curStart} – ${val}` : (curStart || val || '');
+                                setEducation(updated);
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-blue-600 rounded px-2.5 py-1.5 text-xs font-mono text-slate-700 focus:outline-none transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Row 3: GPA / Percentage | Relevant Coursework */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                              <span>GPA / Percentage</span>
+                              <span className="text-[9px] font-medium text-slate-400 font-mono">Optional</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 8.5/10 or 85%"
+                              value={edu.gpa || ''}
+                              onChange={(e) => {
+                                const updated = [...education];
+                                updated[eIdx].gpa = e.target.value;
+                                setEducation(updated);
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-blue-600 rounded px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none transition-colors"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center justify-between">
+                              <span>Relevant Coursework</span>
+                              <span className="text-[9px] font-medium text-slate-400 font-mono">Optional</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. OOP in C++, Operating Systems, Data Structures, Algorithms"
+                              value={edu.coursework || edu.highlights || ''}
+                              onChange={(e) => {
+                                const updated = [...education];
+                                updated[eIdx].coursework = e.target.value;
+                                updated[eIdx].highlights = e.target.value;
+                                setEducation(updated);
+                              }}
+                              className="w-full bg-white border border-slate-200 focus:border-blue-600 rounded px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none transition-colors"
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -2861,37 +3186,78 @@ export default function ResumeEditorPage() {
                     </div>
                   </div>
 
-                  {/* Real Top Rule Fixes / Critical Improvements */}
-                  {atsReport && atsReport.topFixes && atsReport.topFixes.length > 0 && (
+                  {/* 8 Standard ATS Categories Live Checklist */}
+                  {atsReport && (
                     <div className="space-y-2">
-                      <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                        ATS READABILITY CHECKLIST ({atsReport.topFixes.length} KEY AREAS)
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                          ATS EVALUATION (8 KEY CATEGORIES)
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-mono">100% Deterministic</span>
+                      </div>
                       <div className="space-y-1.5">
-                        {atsReport.topFixes.map((fix) => (
-                          <div
-                            key={fix.key}
-                            className="p-2.5 bg-slate-50 border border-slate-200/90 rounded-lg flex items-start justify-between gap-2 text-xs"
-                          >
-                            <div className="space-y-0.5 flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`w-2 h-2 rounded-full shrink-0 ${
-                                  fix.score >= 80 ? 'bg-emerald-500' :
-                                  fix.score >= 60 ? 'bg-blue-500' :
-                                  fix.score >= 40 ? 'bg-amber-500' : 'bg-red-500'
-                                }`} />
-                                <span className="font-bold text-[#0B192C] text-[11px] truncate">{fix.label}</span>
+                        {(atsReport.standardCategories || [
+                          (atsReport.categories as any)?.contact || atsReport.categories?.contactInfo,
+                          (atsReport.categories as any)?.structure || atsReport.categories?.sections,
+                          atsReport.categories?.experience,
+                          (atsReport.categories as any)?.skills || atsReport.categories?.hardSkills,
+                          atsReport.categories?.projects,
+                          atsReport.categories?.education,
+                          atsReport.categories?.formatting,
+                          (atsReport.categories as any)?.contentQuality || atsReport.categories?.metrics,
+                        ].filter(Boolean)).map((cat: any, idx: number) => {
+                          const weightMap: Record<string, string> = {
+                            contactInfo: '10%',
+                            contact: '10%',
+                            sections: '10%',
+                            structure: '10%',
+                            experience: '20%',
+                            hardSkills: '15%',
+                            skills: '15%',
+                            projects: '15%',
+                            education: '10%',
+                            formatting: '10%',
+                            metrics: '10%',
+                            contentQuality: '10%',
+                          };
+                          const weight = weightMap[cat.key] || '10%';
+                          return (
+                            <div
+                              key={cat.key || idx}
+                              className="p-2.5 bg-slate-50 border border-slate-200/90 rounded-lg flex items-start justify-between gap-2 text-xs transition-colors hover:bg-white"
+                            >
+                              <div className="space-y-0.5 flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                    cat.score >= 80 ? 'bg-emerald-500' :
+                                    cat.score >= 60 ? 'bg-blue-500' :
+                                    cat.score >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                                  }`} />
+                                  <span className="font-bold text-[#0B192C] text-[11px] truncate">{cat.label}</span>
+                                  <span className="text-[9px] font-mono px-1 py-0.2 bg-slate-200/80 text-slate-600 rounded">
+                                    Weight: {weight}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 leading-tight">{cat.reason}</p>
+                                {cat.fixSuggestion && cat.score < 80 && (
+                                  <p className="text-[10px] text-blue-700 font-medium pt-0.5">💡 {cat.fixSuggestion}</p>
+                                )}
                               </div>
-                              <p className="text-[10px] text-slate-500 leading-tight">{fix.reason}</p>
-                              {fix.fixSuggestion && (
-                                <p className="text-[10px] text-blue-700 font-medium pt-0.5">💡 {fix.fixSuggestion}</p>
-                              )}
+                              <div className="text-right shrink-0">
+                                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-700 block">
+                                  {cat.score}/100
+                                </span>
+                                <span className={`text-[9px] font-bold block pt-0.5 ${
+                                  cat.score >= 80 ? 'text-emerald-600' :
+                                  cat.score >= 60 ? 'text-blue-600' :
+                                  cat.score >= 40 ? 'text-amber-600' : 'text-red-600'
+                                }`}>
+                                  {cat.score >= 80 ? 'Passed' : cat.score >= 60 ? 'Good' : 'Needs Fix'}
+                                </span>
+                              </div>
                             </div>
-                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-700 shrink-0">
-                              {fix.score}/100
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}

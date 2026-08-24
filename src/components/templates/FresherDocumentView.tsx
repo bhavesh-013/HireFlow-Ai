@@ -181,26 +181,69 @@ export default function FresherDocumentView({
           key={sec.id}
           id={`doc-sec-${sec.id}`}
           onClick={() => handleSelectSection(sec.id)}
-          className={`mb-5 cursor-pointer transition-all rounded-lg p-2 ${
-            activeSection === sec.id ? 'ring-2 ring-blue-500/50 bg-blue-50/20' : 'hover:bg-slate-50/60'
+          className={`mb-4 cursor-pointer transition-all rounded p-1 ${
+            activeSection === sec.id ? 'ring-2 ring-blue-500/50 bg-blue-50/20' : 'hover:bg-slate-50/50'
           }`}
         >
-          <SectionBadgeTitle title={sec.title} icon={getSectionIcon(sec.title)} color={primaryColor} />
-          <div className="space-y-2 mt-2">
-            {displayEducation.map((edu) => (
-              <div key={edu.id} className="text-xs space-y-0.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <h3 className="font-bold text-slate-900">{edu.degree}</h3>
-                  {edu.period && <span className="text-[11px] text-slate-500 font-mono shrink-0">{edu.period}</span>}
+          {/* Clean ATS Section Heading without icon or badges */}
+          <div className="mb-2 pb-0.5 border-b border-slate-900">
+            <h2
+              style={{ color: primaryColor || '#000000' }}
+              className="font-bold text-xs uppercase tracking-wider text-slate-900"
+            >
+              {sec.title || 'EDUCATION'}
+            </h2>
+          </div>
+
+          <div className="space-y-2 mt-1.5">
+            {displayEducation.map((edu) => {
+              const startYear = edu.startYear || (edu.period ? edu.period.split(/[-–—]/)[0]?.trim() : '');
+              const endYear = edu.endYear || (edu.period ? edu.period.split(/[-–—]/)[1]?.trim() : '');
+              const periodText = (startYear && endYear) ? `${startYear} – ${endYear}` : (edu.period || startYear || endYear || '');
+
+              const rawGpa = (edu.gpa || '').trim();
+              const formattedGpa = rawGpa
+                ? (/^(gpa|cgpa|grade|marks)/i.test(rawGpa) || rawGpa.includes('%')
+                    ? rawGpa
+                    : `CGPA: ${rawGpa}`)
+                : null;
+
+              const courseworkClean = (edu.coursework || edu.highlights || '').trim().replace(/^relevant coursework:\s*|^courses:\s*/i, '');
+
+              return (
+                <div key={edu.id} className="text-xs space-y-0.5">
+                  {/* Row 1: Bold Institution (Left) + Right-aligned Dates */}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-bold text-slate-900 leading-snug">{edu.institution}</span>
+                    {periodText && (
+                      <span className="font-mono text-slate-700 text-[11px] shrink-0 text-right">
+                        {periodText}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Row 2: Degree directly below Institution (Left) + Right-aligned GPA */}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-slate-800 leading-snug">{edu.degree}</span>
+                    {formattedGpa && (
+                      <span className="text-slate-800 text-[11px] font-mono shrink-0 text-right">
+                        {formattedGpa}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Row 3: Compact Courses bullet (only when provided) */}
+                  {courseworkClean && (
+                    <ul className="list-disc list-outside ml-3.5 space-y-0 text-[11px] text-slate-700 pt-0.5">
+                      <li className="leading-snug">
+                        <span className="font-semibold text-slate-800">Courses: </span>
+                        {courseworkClean}
+                      </li>
+                    </ul>
+                  )}
                 </div>
-                <p className="text-slate-700 font-medium">{edu.institution}</p>
-                {(edu.highlights || edu.gpa) && (
-                  <p className="text-[11px] text-slate-600 font-semibold mt-0.5">
-                    {edu.highlights || `CGPA: ${edu.gpa}`}
-                  </p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       );

@@ -112,15 +112,54 @@ export default function ResumeTemplateRenderer({ layout, variant, data }: Props)
           <div key={key} className={sectionGap}>
             <SectionTitle layout={layout}>Education</SectionTitle>
             <div className="space-y-1">
-              {data.education.map((e, i) => (
-                <div key={i} className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-[9.5px] font-bold" style={{ color: layout.textColor }}>{e.degree}</p>
-                    <p className="text-[9px]" style={{ color: layout.textColor }}>{e.institution}</p>
+              {data.education.map((e, i) => {
+                const startYear = (e as any).startYear || (e.period ? e.period.split(/[-–—]/)[0]?.trim() : '');
+                const endYear = (e as any).endYear || (e.period ? e.period.split(/[-–—]/)[1]?.trim() : '');
+                const periodText = (startYear && endYear) ? `${startYear} – ${endYear}` : (e.period || startYear || endYear || '');
+
+                const rawGpa = ((e as any).gpa || '').trim();
+                const formattedGpa = rawGpa
+                  ? (/^(gpa|cgpa|grade|marks)/i.test(rawGpa) || rawGpa.includes('%')
+                      ? rawGpa
+                      : `CGPA: ${rawGpa}`)
+                  : null;
+
+                const courseworkClean = ((e as any).coursework || (e as any).highlights || '').trim().replace(/^relevant coursework:\s*|^courses:\s*/i, '');
+
+                return (
+                  <div key={i} className="text-[9px] space-y-0.5 mb-1.5">
+                    {/* Row 1: Bold Institution (Left) + Dates (Right) */}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-bold leading-tight" style={{ color: layout.textColor }}>{e.institution}</span>
+                      {periodText && (
+                        <span className="font-mono text-[8.5px] shrink-0 text-right" style={{ color: layout.accentColor }}>
+                          {periodText}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Row 2: Degree (Left) + GPA (Right) */}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="leading-tight" style={{ color: layout.textColor }}>{e.degree}</span>
+                      {formattedGpa && (
+                        <span className="text-[8.5px] font-mono shrink-0 text-right" style={{ color: layout.textColor }}>
+                          {formattedGpa}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Row 3: Compact Courses bullet */}
+                    {courseworkClean && (
+                      <ul className="list-disc list-outside ml-3 space-y-0 text-[8.5px] pt-0.5" style={{ color: layout.textColor }}>
+                        <li className="leading-tight">
+                          <span className="font-semibold">Courses: </span>
+                          {courseworkClean}
+                        </li>
+                      </ul>
+                    )}
                   </div>
-                  <span className="text-[8.5px] shrink-0" style={{ color: layout.accentColor }}>{e.period}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );

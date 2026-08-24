@@ -84,6 +84,7 @@ export function toBackendPayload(state: EditorState) {
         location: edu.location || '',
         ...splitPeriod(edu.period),
         gpa: edu.gpa || '',
+        currentSem: edu.currentSem || '',
         bullets: edu.highlights ? [edu.highlights] : [],
       })),
       projects: state.projects.map((proj) => ({
@@ -168,6 +169,7 @@ export function fromBackendResume(doc: any): EditorState {
       period: joinPeriod(edu.startDate, edu.endDate),
       location: edu.location || '',
       gpa: edu.gpa || '',
+      currentSem: edu.currentSem || '',
       highlights: (edu.bullets || [])[0] || '',
     })),
     skills: (rd.skills || []).map((s: any) => s.name).filter(Boolean).join(', '),

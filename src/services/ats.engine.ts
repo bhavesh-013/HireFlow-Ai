@@ -188,55 +188,55 @@ function createRuleResult(
   };
 }
 
-// ─── 1. Contact Information Rules (Max 5 Points) ─────────────────────────────
+// ─── 1. Contact Information Rules (Max 10 Points) ─────────────────────────────
 function evalContactRules(r: ParsedResumeData): ATSRuleResult[] {
   const pi: any = r.personalInfo || {};
   const rules: ATSRuleResult[] = [];
 
-  // Name check (1 pt)
+  // Name check (2 pts)
   const hasName = Boolean(pi.fullName && pi.fullName.trim().length >= 2);
   rules.push(createRuleResult(
     'contact_name', 'Contact Information', 'critical', hasName,
-    hasName ? 1 : 0, 1,
+    hasName ? 2 : 0, 2,
     hasName ? `Full name detected: "${pi.fullName}"` : 'Full name is missing in header.',
     hasName ? null : 'Include your full legal or professional name at the top of your resume.'
   ));
 
-  // Email check (1 pt)
+  // Email check (2 pts)
   const hasEmail = Boolean(pi.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pi.email.trim()));
   rules.push(createRuleResult(
     'contact_email', 'Contact Information', 'critical', hasEmail,
-    hasEmail ? 1 : 0, 1,
+    hasEmail ? 2 : 0, 2,
     hasEmail ? `Professional email address detected: "${pi.email}"` : 'No valid email address detected.',
     hasEmail ? null : 'Add a clean, professional email address (e.g. name@domain.com).'
   ));
 
-  // Phone check (1 pt)
+  // Phone check (2 pts)
   const hasPhone = Boolean(pi.phone && pi.phone.trim().length >= 7);
   rules.push(createRuleResult(
     'contact_phone', 'Contact Information', 'high', hasPhone,
-    hasPhone ? 1 : 0, 1,
+    hasPhone ? 2 : 0, 2,
     hasPhone ? `Phone number detected: "${pi.phone}"` : 'Phone number is missing.',
     hasPhone ? null : 'Add a primary phone number with country/area code.'
   ));
 
-  // LinkedIn check (1 pt)
+  // LinkedIn check (2 pts)
   const text = getResumeText(r);
   const hasLinkedin = Boolean(pi.linkedin || text.toLowerCase().includes('linkedin.com'));
   rules.push(createRuleResult(
     'contact_linkedin', 'Contact Information', 'medium', hasLinkedin,
-    hasLinkedin ? 1 : 0, 1,
+    hasLinkedin ? 2 : 0, 2,
     hasLinkedin ? 'LinkedIn profile URL detected.' : 'LinkedIn profile URL not found.',
     hasLinkedin ? null : 'Add your LinkedIn profile URL (e.g. linkedin.com/in/yourname) if you have one.'
   ));
 
-  // GitHub / Portfolio check (1 pt)
+  // GitHub / Portfolio check (2 pts)
   const hasGithubOrPortfolio = Boolean(
     pi.github || pi.website || text.toLowerCase().includes('github.com') || text.toLowerCase().includes('portfolio')
   );
   rules.push(createRuleResult(
     'contact_github_portfolio', 'Contact Information', 'low', hasGithubOrPortfolio,
-    hasGithubOrPortfolio ? 1 : 0, 1,
+    hasGithubOrPortfolio ? 2 : 0, 2,
     hasGithubOrPortfolio ? 'GitHub or Portfolio web link detected.' : 'No GitHub or personal portfolio URL detected.',
     hasGithubOrPortfolio ? null : 'Adding a public GitHub or portfolio link can boost technical credibility.'
   ));
@@ -557,23 +557,23 @@ function evalExperienceRules(r: ParsedResumeData, resumeType: ResumeType): ATSRu
   return rules;
 }
 
-// ─── 6. Projects Rules (Max 10 Points) ────────────────────────────────────────
+// ─── 6. Projects Rules (Max 15 Points) ────────────────────────────────────────
 function evalProjectsRules(r: ParsedResumeData, resumeType: ResumeType): ATSRuleResult[] {
   const rules: ATSRuleResult[] = [];
   const projects = r.projects || [];
 
-  // Project Presence (4 pts)
+  // Project Presence (6 pts)
   const hasProjects = projects.length > 0;
-  const projPresenceScore = hasProjects ? 4 : resumeType === 'fresher' ? 0 : 2;
+  const projPresenceScore = hasProjects ? 6 : resumeType === 'fresher' ? 0 : 3;
 
   rules.push(createRuleResult(
     'proj_presence', 'Projects', resumeType === 'fresher' && !hasProjects ? 'critical' : 'medium', hasProjects,
-    projPresenceScore, 4,
+    projPresenceScore, 6,
     hasProjects ? `${projects.length} project entry/entries found.` : 'No projects section found.',
     hasProjects ? null : 'Add 2–3 relevant technical projects with tech stack and achievement bullets.'
   ));
 
-  // Project Completeness (3 pts)
+  // Project Completeness (5 pts)
   if (hasProjects) {
     let incompleteProj = 0;
     projects.forEach((p) => {
@@ -581,30 +581,30 @@ function evalProjectsRules(r: ParsedResumeData, resumeType: ResumeType): ATSRule
         incompleteProj++;
       }
     });
-    const projCompScore = incompleteProj === 0 ? 3 : 1;
+    const projCompScore = incompleteProj === 0 ? 5 : 2;
 
     rules.push(createRuleResult(
-      'proj_completeness', 'Projects', 'medium', projCompScore === 3,
-      projCompScore, 3,
+      'proj_completeness', 'Projects', 'medium', projCompScore === 5,
+      projCompScore, 5,
       incompleteProj === 0 ? 'All projects include title, description/bullets, and tech stack.' : `${incompleteProj} project(s) missing tech stack or description bullets.`,
-      projCompScore === 3 ? null : 'Ensure every project lists title, tech stack (e.g. React, Node.js), and 2–3 impact bullets.'
+      projCompScore === 5 ? null : 'Ensure every project lists title, tech stack (e.g. React, Node.js), and 2–3 impact bullets.'
     ));
   } else {
     rules.push(createRuleResult(
       'proj_completeness', 'Projects', 'low', resumeType !== 'fresher',
-      resumeType === 'fresher' ? 0 : 2, 3,
+      resumeType === 'fresher' ? 0 : 3, 5,
       resumeType === 'fresher' ? 'Fresher candidates require project details.' : 'Experienced profile without projects section.',
       null
     ));
   }
 
-  // Project Bullet Quality (3 pts)
+  // Project Bullet Quality (4 pts)
   const projBullets = projects.flatMap((p) => p.bullets || []);
-  const qualityScore = projBullets.length >= 3 ? 3 : projBullets.length >= 1 ? 2 : hasProjects ? 1 : 0;
+  const qualityScore = projBullets.length >= 3 ? 4 : projBullets.length >= 1 ? 2 : hasProjects ? 1 : 0;
 
   rules.push(createRuleResult(
     'proj_bullet_quality', 'Projects', 'low', qualityScore >= 2,
-    qualityScore, 3,
+    qualityScore, 4,
     projBullets.length > 0 ? `${projBullets.length} total project bullet(s) analyzed.` : 'No project bullet points found.',
     qualityScore >= 2 ? null : 'Add 2–3 detailed achievement bullets to each project entry.'
   ));
@@ -612,35 +612,85 @@ function evalProjectsRules(r: ParsedResumeData, resumeType: ResumeType): ATSRule
   return rules;
 }
 
-// ─── 7. Education Rules (Max 5 Points) ────────────────────────────────────────
+// ─── 7. Education Rules (Max 10 Points) ────────────────────────────────────────
 function evalEducationRules(r: ParsedResumeData): ATSRuleResult[] {
   const rules: ATSRuleResult[] = [];
   const edu = r.education || [];
 
-  // Education Presence (3 pts)
+  // Education Presence (4 pts)
   const hasEdu = edu.length > 0;
   rules.push(createRuleResult(
     'edu_presence', 'Education', 'critical', hasEdu,
-    hasEdu ? 3 : 0, 3,
+    hasEdu ? 4 : 0, 4,
     hasEdu ? `${edu.length} education entry/entries found.` : 'No education section detected.',
-    hasEdu ? null : 'Add your highest education entry with degree title, institution, and graduation year.'
+    hasEdu ? null : 'Add your highest education entry with college/institution name and year.'
   ));
 
-  // Education Completeness (2 pts)
+  // Required Fields: Degree, College Name & Year (4 pts)
   if (hasEdu) {
-    const isComplete = edu.every((e) => Boolean(e.degree && e.institution && e.period));
+    let missingRequiredCount = 0;
+    const missingFields: string[] = [];
+
+    edu.forEach((e) => {
+      const hasDegree = Boolean(e.degree && e.degree.trim().length >= 2);
+      const hasCollege = Boolean(e.institution && e.institution.trim().length >= 2);
+      const hasYear = Boolean(
+        (e.period && e.period.trim().length >= 2) ||
+        (e.startYear && e.startYear.trim()) ||
+        (e.endYear && e.endYear.trim())
+      );
+
+      if (!hasDegree || !hasCollege || !hasYear) {
+        missingRequiredCount++;
+        if (!hasDegree) missingFields.push('Degree / Field of Study');
+        if (!hasCollege) missingFields.push('College / University');
+        if (!hasYear) missingFields.push('Graduation Year');
+      }
+    });
+
+    const isComplete = missingRequiredCount === 0;
+    const compScore = isComplete ? 4 : Math.max(1, 4 - missingRequiredCount * 2);
+
     rules.push(createRuleResult(
       'edu_completeness', 'Education', 'high', isComplete,
-      isComplete ? 2 : 1, 2,
-      isComplete ? 'Degree name, institution, and graduation year present.' : 'Incomplete education details (missing degree, school, or date).',
-      isComplete ? null : 'Ensure education entries include degree name, institution, and graduation year.'
+      compScore, 4,
+      isComplete
+        ? 'Required education details (Degree, College, and Year) are complete.'
+        : `Missing required education details: ${[...new Set(missingFields)].join(', ')}.`,
+      isComplete ? null : 'Provide Degree, College/University, and Graduation Year (required).'
     ));
   } else {
     rules.push(createRuleResult(
       'edu_completeness', 'Education', 'medium', false,
+      0, 4,
+      'No education entries to evaluate for required fields.',
+      'Include degree, college name, and graduation year (required).'
+    ));
+  }
+
+  // Optional Enrichments: GPA / Percentage & Relevant Coursework (2 pts)
+  if (hasEdu) {
+    const hasOptionalGpaOrCoursework = edu.some((e: any) => Boolean(
+      (e.gpa && e.gpa.trim()) ||
+      (e.coursework && e.coursework.trim()) ||
+      (e.highlights && e.highlights.trim())
+    ));
+    const optScore = hasOptionalGpaOrCoursework ? 2 : 1; // 1 pt base if required fields are present, 2 pts with optional GPA/coursework
+
+    rules.push(createRuleResult(
+      'edu_detail_quality', 'Education', 'low', true,
+      optScore, 2,
+      hasOptionalGpaOrCoursework
+        ? 'Education entries include optional GPA or relevant coursework.'
+        : 'GPA and relevant coursework are optional. You can add them to highlight strong academic achievements.',
+      null
+    ));
+  } else {
+    rules.push(createRuleResult(
+      'edu_detail_quality', 'Education', 'low', false,
       0, 2,
       'No education entries to evaluate.',
-      'Include your degree title and university/institution.'
+      null
     ));
   }
 
@@ -1036,29 +1086,25 @@ export function analyzeResume(
   const jd = options.jobDescription;
   const resumeType: ResumeType = resumeData.resumeType || 'experienced';
 
-  // Evaluate all 10 core category rule groups
-  const contactRules = evalContactRules(resumeData);
-  const structRules = evalStructureRules(resumeData, resumeType);
-  const fmtRules = evalFormattingRules(resumeData);
-  const skillsRules = evalSkillsRules(resumeData);
-  const expRules = evalExperienceRules(resumeData, resumeType);
-  const projRules = evalProjectsRules(resumeData, resumeType);
-  const eduRules = evalEducationRules(resumeData);
-  const contentRules = evalContentQualityRules(resumeData);
-  const compRules = evalCompletenessRules(resumeData, resumeType);
-  const kwRules = evalKeywordRules(resumeData, jd);
+  // Evaluate the 8 core standard ATS categories (Total = 100 max points)
+  const contactRules = evalContactRules(resumeData); // 10 pts (10%)
+  const structRules = evalStructureRules(resumeData, resumeType); // 10 pts (10%)
+  const expRules = evalExperienceRules(resumeData, resumeType); // 20 pts (20%)
+  const skillsRules = evalSkillsRules(resumeData); // 15 pts (15%)
+  const projRules = evalProjectsRules(resumeData, resumeType); // 15 pts (15%)
+  const eduRules = evalEducationRules(resumeData); // 10 pts (10%)
+  const fmtRules = evalFormattingRules(resumeData); // 10 pts (10%)
+  const contentRules = evalContentQualityRules(resumeData); // 10 pts (10%)
 
   const allRules: ATSRuleResult[] = [
     ...contactRules,
     ...structRules,
-    ...fmtRules,
-    ...skillsRules,
     ...expRules,
+    ...skillsRules,
     ...projRules,
     ...eduRules,
+    ...fmtRules,
     ...contentRules,
-    ...compRules,
-    ...kwRules,
   ];
 
   // Sum total points earned and max points across all rules
@@ -1111,34 +1157,41 @@ export function analyzeResume(
     };
   };
 
-  const categoriesRecord: Record<ATSCategoryKey, ATSCategoryResult> = {
+  const categoriesRecord: Record<string, ATSCategoryResult> = {
+    // ─── The 8 Standard ATS Categories (100% total weight) ───────────
+    contact: mapGroupToCategoryResult('contactInfo', 'Contact Information', contactRules), // 10%
+    structure: mapGroupToCategoryResult('sections', 'Resume Structure', structRules), // 10%
+    experience: mapGroupToCategoryResult('experience', 'Work Experience', expRules), // 20%
+    skills: mapGroupToCategoryResult('hardSkills', 'Skills', skillsRules), // 15%
+    projects: mapGroupToCategoryResult('projects', 'Projects', projRules), // 15%
+    education: mapGroupToCategoryResult('education', 'Education', eduRules), // 10%
+    formatting: mapGroupToCategoryResult('formatting', 'Formatting & Layout', fmtRules), // 10%
+    contentQuality: mapGroupToCategoryResult('metrics', 'Content Quality', contentRules), // 10%
+
+    // ─── Legacy / Detailed Sub-category Aliases ─────────────────────
     contactInfo: mapGroupToCategoryResult('contactInfo', 'Contact Information', contactRules),
     sections: mapGroupToCategoryResult('sections', 'Resume Structure', structRules),
     sectionOrder: mapGroupToCategoryResult('sectionOrder', 'Section Order', structRules.slice(1, 2)),
-    formatting: mapGroupToCategoryResult('formatting', 'Formatting & Layout', fmtRules),
     hardSkills: mapGroupToCategoryResult('hardSkills', 'Hard Skills', skillsRules.slice(0, 2)),
     softSkills: mapGroupToCategoryResult('softSkills', 'Soft Skills', skillsRules.slice(2, 3)),
-    experience: mapGroupToCategoryResult('experience', 'Work Experience', expRules),
-    projects: mapGroupToCategoryResult('projects', 'Projects', projRules),
-    education: mapGroupToCategoryResult('education', 'Education', eduRules),
     metrics: mapGroupToCategoryResult('metrics', 'Quantified Metrics', contentRules.slice(0, 1)),
     starFormat: mapGroupToCategoryResult('starFormat', 'STAR Format', expRules.filter((r) => r.id === 'exp_star_format')),
     actionVerbs: mapGroupToCategoryResult('actionVerbs', 'Action Verbs', expRules.filter((r) => r.id === 'exp_action_verbs')),
     leadership: mapGroupToCategoryResult('leadership', 'Leadership Signals', expRules.filter((r) => r.id === 'exp_leadership')),
     readability: mapGroupToCategoryResult('readability', 'Readability', contentRules.slice(1, 2)),
     bulletQuality: mapGroupToCategoryResult('bulletQuality', 'Bullet Quality', contentRules.slice(1, 3)),
-    length: mapGroupToCategoryResult('length', 'Resume Length', compRules.slice(0, 1)),
+    length: mapGroupToCategoryResult('length', 'Resume Length', structRules.slice(0, 1)),
     title: mapGroupToCategoryResult('title', 'Title & Headline', contactRules.slice(0, 1)),
     github: mapGroupToCategoryResult('github', 'GitHub Profile', contactRules.filter((r) => r.id === 'contact_github_portfolio')),
     portfolio: mapGroupToCategoryResult('portfolio', 'Portfolio / Website', contactRules.filter((r) => r.id === 'contact_github_portfolio')),
     linkedin: mapGroupToCategoryResult('linkedin', 'LinkedIn Profile', contactRules.filter((r) => r.id === 'contact_linkedin')),
     certificates: mapGroupToCategoryResult('certificates', 'Certifications', structRules),
     achievements: mapGroupToCategoryResult('achievements', 'Achievements', contentRules),
-    missingSkills: mapGroupToCategoryResult('missingSkills', 'Missing Skills (JD)', kwRules),
-    repeatedKeywords: mapGroupToCategoryResult('repeatedKeywords', 'Repeated Keywords', kwRules.filter((r) => r.id === 'kw_repetition_check')),
-    keywordDensity: mapGroupToCategoryResult('keywordDensity', 'Keyword Density', kwRules.filter((r) => r.id === 'kw_general_density')),
-    keywords: mapGroupToCategoryResult('keywords', 'Keyword Optimization', kwRules),
-    dateConsistency: mapGroupToCategoryResult('dateConsistency', 'Date Consistency', compRules),
+    missingSkills: mapGroupToCategoryResult('missingSkills', 'Missing Skills (JD)', skillsRules),
+    repeatedKeywords: mapGroupToCategoryResult('repeatedKeywords', 'Repeated Keywords', skillsRules.filter((r) => r.id === 'skills_duplication')),
+    keywordDensity: mapGroupToCategoryResult('keywordDensity', 'Keyword Density', skillsRules.slice(0, 2)),
+    keywords: mapGroupToCategoryResult('keywords', 'Keyword Optimization', skillsRules),
+    dateConsistency: mapGroupToCategoryResult('dateConsistency', 'Date Consistency', expRules.slice(0, 2)),
     grammarTypos: mapGroupToCategoryResult('grammarTypos', 'Grammar & Typos', contentRules.filter((r) => r.id === 'content_grammar_spelling')),
   };
 
@@ -1170,11 +1223,22 @@ export function analyzeResume(
     .slice(0, 10)
     .map(([keyword, count]) => ({ keyword, count }));
 
-  // Top fixes from failed rules
-  const failedCategories = Object.values(categoriesRecord)
+  // The 8 Core Standard Categories (Weights total 100%)
+  const standardCategories: ATSCategoryResult[] = [
+    categoriesRecord.contact,        // 10%
+    categoriesRecord.structure,      // 10%
+    categoriesRecord.experience,     // 20%
+    categoriesRecord.skills,         // 15%
+    categoriesRecord.projects,       // 15%
+    categoriesRecord.education,      // 10%
+    categoriesRecord.formatting,     // 10%
+    categoriesRecord.contentQuality, // 10%
+  ];
+
+  // Top fixes from the 8 standard categories (strictly deduplicated)
+  const failedCategories = standardCategories
     .filter((c) => !c.passed)
-    .sort((a, b) => b.estimatedAtsGain - a.estimatedAtsGain)
-    .slice(0, 5);
+    .sort((a, b) => (100 - a.score) - (100 - b.score));
 
   // Calculate separate JD Match Breakdown if JD is present
   const jdMatchBreakdown = jd ? calculateJdMatchBreakdown(resumeData, jd) : undefined;
@@ -1182,7 +1246,8 @@ export function analyzeResume(
   return {
     finalScore,
     scoreLabel,
-    categories: categoriesRecord,
+    categories: categoriesRecord as any,
+    standardCategories,
     ruleResults: allRules,
     scoringBreakdown: {
       totalPointsEarned: totalEarned,

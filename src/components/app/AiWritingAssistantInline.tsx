@@ -156,28 +156,31 @@ export function AiWritingAssistantInline({
               </button>
             </React.Fragment>
           ) : null}
+          {section !== 'summary' && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleAiAction('fix_grammar')}
+                disabled={isAiLoading || !value.trim()}
+                className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-bold rounded-md transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1"
+                title="Fix Grammar & Spelling"
+              >
+                <Check size={11} className="text-emerald-600" />
+                <span>Fix Grammar</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => handleAiAction('fix_grammar')}
-            disabled={isAiLoading || !value.trim()}
-            className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-bold rounded-md transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1"
-            title="Fix Grammar & Spelling"
-          >
-            <Check size={11} className="text-emerald-600" />
-            <span>Fix Grammar</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleAiAction('improve')}
-            disabled={isAiLoading || !value.trim()}
-            className="px-2.5 py-0.5 bg-[#0B192C] hover:bg-slate-800 text-white text-[10px] font-bold rounded-md transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1 shadow-2xs"
-            title="Improve Wording & Tone"
-          >
-            <Wand2 size={11} className="text-blue-300" />
-            <span>{isAiLoading ? 'Improving...' : 'AI Improve'}</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => handleAiAction('improve')}
+                disabled={isAiLoading || !value.trim()}
+                className="px-2.5 py-0.5 bg-[#0B192C] hover:bg-slate-800 text-white text-[10px] font-bold rounded-md transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1 shadow-2xs"
+                title="Improve Wording & Tone"
+              >
+                <Wand2 size={11} className="text-blue-300" />
+                <span>{isAiLoading ? 'Improving...' : 'AI Improve'}</span>
+              </button>
+            </>
+          )}
 
           {showUndo && (
             <button
@@ -288,49 +291,41 @@ export function AiWritingAssistantInline({
         </div>
       )}
 
-      {/* Popover Card 2: AI Action Suggestion Card (Preview / Apply / Dismiss / Undo) */}
+      {/* Minimal Before -> After Result Panel */}
       {aiSuggestion && (
-        <div className="p-4 bg-white border border-blue-300 rounded-2xl shadow-xl space-y-3 animate-in slide-in-from-top-2 duration-150 z-30">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <span className="flex items-center gap-1.5 text-xs font-bold text-blue-900">
-              <Sparkles size={14} className="text-blue-600" />
-              <span>AI PROPOSED IMPROVEMENT</span>
-            </span>
-            <span className="text-[9px] font-mono font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
-              No Fabrication Guaranteed
-            </span>
+        <div className="p-3 bg-white border border-slate-200 rounded-lg text-xs space-y-2.5 shadow-xs transition-all z-20">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+            <span>Proposed Change ({aiSuggestion.type === 'fix_grammar' ? 'Grammar & Clarity' : 'AI Improvement'})</span>
           </div>
-
-          <p className="text-xs text-slate-600 italic">{aiSuggestion.reason}</p>
 
           {/* Before / After Preview */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-            <div className="p-2.5 bg-red-50/50 border border-red-200 rounded-lg space-y-0.5">
-              <span className="text-[9px] font-mono font-bold text-red-700 uppercase">ORIGINAL</span>
-              <p className="text-slate-800 line-through opacity-80">{aiSuggestion.original}</p>
+            <div className="p-2 bg-red-50/60 border border-red-200 rounded-md">
+              <span className="block text-[9px] font-bold text-red-600 uppercase tracking-wider mb-0.5">Original</span>
+              <p className="text-slate-700 line-through opacity-80 leading-snug">{aiSuggestion.original}</p>
             </div>
-            <div className="p-2.5 bg-emerald-50/50 border border-emerald-200 rounded-lg space-y-0.5">
-              <span className="text-[9px] font-mono font-bold text-emerald-700 uppercase">PROPOSED</span>
-              <p className="text-slate-900 font-bold">{aiSuggestion.suggested}</p>
+            <div className="p-2 bg-emerald-50/60 border border-emerald-200 rounded-md">
+              <span className="block text-[9px] font-bold text-emerald-600 uppercase tracking-wider mb-0.5">Proposed</span>
+              <p className="text-slate-900 font-semibold leading-snug">{aiSuggestion.suggested}</p>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-2 pt-1">
+          <div className="flex items-center justify-end gap-2 pt-0.5">
             <button
               type="button"
               onClick={handleDismiss}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 cursor-pointer"
+              className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-md border border-slate-200 cursor-pointer"
             >
-              Dismiss
+              Cancel
             </button>
             <button
               type="button"
               onClick={() => handleApplySuggestion(aiSuggestion.suggested)}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-2xs flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1 bg-[#0B192C] hover:bg-slate-800 text-white font-semibold text-xs rounded-md flex items-center gap-1 cursor-pointer"
             >
-              <Check size={13} />
-              <span>Apply Improvement</span>
+              <Check size={12} />
+              <span>Apply</span>
             </button>
           </div>
         </div>
