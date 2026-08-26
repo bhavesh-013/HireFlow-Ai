@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowUpRight,
   FileText,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import QuickActionModal from '../components/QuickActionModal';
 import TemplateModal from '../components/TemplateModal';
+import AuthModal from '../components/AuthModal';
 
 interface LandingPageProps {
   onOpenInfo?: (title: string, content: string) => void;
@@ -25,8 +26,30 @@ interface LandingPageProps {
 
 export default function LandingPage({ onOpenInfo }: LandingPageProps) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [quickAction, setQuickAction] = useState<'build' | 'analyse' | 'assistant' | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+
+  // Authentication Modal on Landing Page
+  const authQuery = searchParams.get('auth');
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+
+  useEffect(() => {
+    if (authQuery === 'login' || authQuery === 'signup') {
+      setAuthMode(authQuery);
+      setAuthModalOpen(true);
+    }
+  }, [authQuery]);
+
+  const handleCloseAuthModal = () => {
+    setAuthModalOpen(false);
+    if (searchParams.get('auth')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('auth');
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   return (
     <div className="space-y-16 sm:space-y-24">
@@ -717,6 +740,12 @@ export default function LandingPage({ onOpenInfo }: LandingPageProps) {
       <TemplateModal
         templateId={selectedTemplate}
         onClose={() => setSelectedTemplate(null)}
+      />
+
+      <AuthModal
+        open={authModalOpen}
+        initialMode={authMode}
+        onClose={handleCloseAuthModal}
       />
     </div>
   );

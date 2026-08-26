@@ -22,7 +22,32 @@ function getLocalResumes(): ResumeDocument[] {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return inMemoryResumes;
     const raw = localStorage.getItem(LOCAL_RESUMES_KEY);
-    return raw ? JSON.parse(raw) : inMemoryResumes;
+    let list: ResumeDocument[] = raw ? JSON.parse(raw) : inMemoryResumes;
+    // Fallback: merge current in-progress local resume if not already in list
+    const currentRaw = localStorage.getItem('hireflow_current_resume');
+    if (currentRaw) {
+      try {
+        const curData = JSON.parse(currentRaw);
+        const curId = curData.id || curData._id || 'local_current';
+        if (!list.some((r) => r.id === curId || r._id === curId)) {
+          list = [
+            {
+              _id: curId,
+              id: curId,
+              title: curData.title || 'Untitled Resume',
+              targetRole: curData.targetRole || curData.personalInfo?.jobTitle || '',
+              templateName: curData.templateName || 'Modern',
+              resumeType: curData.resumeType || 'experienced',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              resumeData: curData,
+            },
+            ...list,
+          ];
+        }
+      } catch {}
+    }
+    return list;
   } catch {
     return inMemoryResumes;
   }
@@ -44,10 +69,26 @@ export const resumeService = {
       const { data, error } = await supabase
         .from('resumes')
         .select('*')
+        .eq('user_id', user.id)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false });
 
-      if (!error && data) {
+      if (error) {
+        if (error.code === 'PGRST205') {
+          console.error(
+            `[resumeService] ⚠️ Supabase table 'resumes' does not exist in schema (PGRST205). Please run the SQL migration script from 'supabase/full_schema.sql' in your Supabase Dashboard SQL Editor.`
+          );
+          // Throw so callers get a meaningful error instead of silently falling back to stale localStorage
+          throw new Error(
+            'Database tables have not been created yet. Please run the SQL migration from supabase/full_schema.sql in your Supabase Dashboard SQL Editor.'
+          );
+        } else {
+          console.error('[resumeService] list error:', error);
+          throw new Error(error.message);
+        }
+      }
+
+      if (data) {
         // Hydrate resumeData from sections for each resume
         const hydrated = await Promise.all(
           data.map(async (doc) => {
@@ -81,12 +122,18 @@ export const resumeService = {
               resumeType: doc.resume_type || 'experienced',
               isArchived: doc.is_archived,
               isFavorite: doc.is_favorite,
+              ats_score: typeof doc.ats_score === 'number' ? doc.ats_score : typeof resumeData.meta?.atsScore === 'number' ? resumeData.meta.atsScore : null,
+              atsScore: typeof doc.ats_score === 'number' ? doc.ats_score : typeof resumeData.meta?.atsScore === 'number' ? resumeData.meta.atsScore : null,
+              structure_score: doc.structure_score ?? null,
               createdAt: doc.created_at,
               updatedAt: doc.updated_at,
               resumeData,
             };
           })
         );
+
+        // Keep localStorage cache in sync with the authoritative Supabase data
+        saveLocalResumes(hydrated);
         return hydrated;
       }
     }
@@ -135,6 +182,9 @@ export const resumeService = {
           resumeType: doc.resume_type || 'experienced',
           isArchived: doc.is_archived,
           isFavorite: doc.is_favorite,
+          ats_score: typeof doc.ats_score === 'number' ? doc.ats_score : typeof resumeData.meta?.atsScore === 'number' ? resumeData.meta.atsScore : null,
+          atsScore: typeof doc.ats_score === 'number' ? doc.ats_score : typeof resumeData.meta?.atsScore === 'number' ? resumeData.meta.atsScore : null,
+          structure_score: doc.structure_score ?? null,
           createdAt: doc.created_at,
           updatedAt: doc.updated_at,
           resumeData,
@@ -153,15 +203,31 @@ export const resumeService = {
     const targetRole = rd.personalInfo?.jobTitle || payload.targetRole || '';
 
     if (isSupabaseConfigured() && user) {
+      const atsScore =
+        typeof payload.ats_score === 'number'
+          ? payload.ats_score
+          : typeof payload.atsScore === 'number'
+          ? payload.atsScore
+          : typeof rd.meta?.atsScore === 'number'
+          ? rd.meta.atsScore
+          : null;
+
+      const insertRow: any = {
+        user_id: user.id,
+        title,
+        target_role: targetRole,
+        template_name: payload.templateName || 'Modern',
+        resume_type: rd.meta?.resumeType === 'fresher' ? 'fresher' : 'experienced',
+      };
+      if (atsScore !== null) insertRow.ats_score = atsScore;
+      // Attach optional file metadata from uploads
+      if (payload.originalFileName) insertRow.original_file_name = payload.originalFileName;
+      if (payload.filePath) insertRow.file_path = payload.filePath;
+      if (payload.fileType) insertRow.file_type = payload.fileType;
+
       const { data: resumeDoc, error } = await supabase
         .from('resumes')
-        .insert({
-          user_id: user.id,
-          title,
-          target_role: targetRole,
-          template_name: payload.templateName || 'Modern',
-          resume_type: rd.meta?.resumeType === 'fresher' ? 'fresher' : 'experienced',
-        })
+        .insert(insertRow)
         .select()
         .single();
 
@@ -219,15 +285,29 @@ export const resumeService = {
     const targetRole = rd.personalInfo?.jobTitle || payload.targetRole || '';
 
     if (isSupabaseConfigured() && user && id && !id.startsWith('local_') && !id.startsWith('draft_')) {
+      const atsScore =
+        typeof payload.ats_score === 'number'
+          ? payload.ats_score
+          : typeof payload.atsScore === 'number'
+          ? payload.atsScore
+          : typeof rd.meta?.atsScore === 'number'
+          ? rd.meta.atsScore
+          : undefined;
+
+      const updateData: any = {
+        title,
+        target_role: targetRole,
+        template_name: payload.templateName || undefined,
+        resume_type: rd.meta?.resumeType === 'fresher' ? 'fresher' : rd.meta?.resumeType === 'experienced' ? 'experienced' : undefined,
+        updated_at: new Date().toISOString(),
+      };
+      if (atsScore !== undefined) {
+        updateData.ats_score = atsScore;
+      }
+
       await supabase
         .from('resumes')
-        .update({
-          title,
-          target_role: targetRole,
-          template_name: payload.templateName || undefined,
-          resume_type: rd.meta?.resumeType === 'fresher' ? 'fresher' : rd.meta?.resumeType === 'experienced' ? 'experienced' : undefined,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', id);
 
       // Upsert sections

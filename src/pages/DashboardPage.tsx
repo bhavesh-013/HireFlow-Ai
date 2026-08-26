@@ -19,32 +19,32 @@ import {
   Wand2,
   Briefcase,
   ChevronRight,
-  X
+  X,
+  Lock
 } from 'lucide-react';
 import type { ResumeItem } from '../data/resumeListTypes';
-import { resumes as resumesApi, isAuthenticated, getStoredUser } from '../lib/api';
+import { resumes as resumesApi, activity as activityApi, isAuthenticated, getStoredUser } from '../lib/api';
+import { rememberCurrentLocationForRedirect } from '../lib/authGate';
 import { analyzeResume } from '../services/ats.engine';
 
+function getPersistedAtsScore(doc: any): number | null {
+  if (typeof doc.ats_score === 'number') return doc.ats_score;
+  if (typeof doc.atsScore === 'number') return doc.atsScore;
+  if (typeof doc.resumeData?.meta?.atsScore === 'number') return doc.resumeData.meta.atsScore;
+  if (typeof doc.resumeData?.atsScore === 'number') return doc.resumeData.atsScore;
+  return null;
+}
+
 /**
- * Converts a stored resume document into a dashboard list item. The ATS
- * score and structure score are computed live with the deterministic
- * scoring engine (never faked) — resumes with no content yet score 0
- * rather than showing a placeholder number.
+ * Converts a stored resume document into a dashboard list item.
  */
 function backendResumeToItem(doc: any): ResumeItem {
-  let atsScore = 0;
-  let structureScore = 0;
-  try {
-    if (doc.resumeData && Object.keys(doc.resumeData).length > 0) {
-      const report = analyzeResume(doc.resumeData);
-      atsScore = report.finalScore;
-      const sections = report.categories?.sections?.score ?? 0;
-      const sectionOrder = report.categories?.sectionOrder?.score ?? 0;
-      structureScore = Math.round((sections + sectionOrder) / 2);
-    }
-  } catch {
-    // If a resume's data is malformed, don't let scoring crash the dashboard —
-    // just show it as unscored rather than fabricating a number.
+  const atsScore = getPersistedAtsScore(doc);
+  let structureScore: number | null = null;
+  if (typeof doc.structure_score === 'number') {
+    structureScore = doc.structure_score;
+  } else if (typeof doc.resumeData?.meta?.structureScore === 'number') {
+    structureScore = doc.resumeData.meta.structureScore;
   }
 
   return {
@@ -63,6 +63,26 @@ function backendResumeToItem(doc: any): ResumeItem {
   };
 }
 
+function formatActivityTime(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  } catch {
+    return 'Recently';
+  }
+}
+
 interface ToastState {
   show: boolean;
   message: string;
@@ -71,10 +91,48 @@ interface ToastState {
 export default function DashboardPage() {
   const navigate = useNavigate();
 
-  // Resumes are always loaded from the real backend (or the local-storage
-  // fallback inside resumeService for guests/offline use) — never from
-  // seeded demo data. An empty list is a legitimate, honest state.
+  // Route protection gate for Dashboard
+  if (!isAuthenticated()) {
+    return (
+      <div className="min-h-[65vh] flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+        <div className="bg-white border border-slate-200/90 rounded-3xl p-8 sm:p-10 max-w-md w-full shadow-lg space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center mx-auto shadow-inner">
+            <Lock size={30} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-black text-[#0B192C]">Please sign in first</h2>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              Please sign in first to access your dashboard and manage your saved resumes.
+            </p>
+          </div>
+          <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={() => {
+                rememberCurrentLocationForRedirect('/app/dashboard', '');
+                navigate('/?auth=login');
+              }}
+              className="w-full bg-[#0B192C] hover:bg-slate-800 text-white font-bold text-sm px-6 py-3 rounded-xl transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
+            >
+              <span>Sign In</span>
+            </button>
+            <button
+              onClick={() => {
+                rememberCurrentLocationForRedirect('/app/dashboard', '');
+                navigate('/?auth=signup');
+              }}
+              className="w-full bg-slate-100 hover:bg-slate-200 text-[#0B192C] font-bold text-sm px-6 py-3 rounded-xl transition-all cursor-pointer"
+            >
+              Sign Up Free
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Resumes are always loaded from the real backend — never from seeded demo data.
   const [resumesList, setResumesList] = useState<ResumeItem[]>([]);
+  const [activityList, setActivityList] = useState<any[]>([]);
   const [isLoadingResumes, setIsLoadingResumes] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isGuestMode, setIsGuestMode] = useState(false);
@@ -96,9 +154,21 @@ export default function DashboardPage() {
       .finally(() => setIsLoadingResumes(false));
   };
 
+  const loadActivities = () => {
+    activityApi
+      .listRecent(10)
+      .then((data: any) => {
+        setActivityList(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        setActivityList([]);
+      });
+  };
+
   useEffect(() => {
     setIsGuestMode(!isAuthenticated());
     loadResumes();
+    loadActivities();
   }, []);
 
   const showNotification = (msg: string) => {
@@ -153,7 +223,9 @@ export default function DashboardPage() {
 
     try {
       await resumesApi.remove(id);
+      await activityApi.log('RESUME_DELETED', null, `Deleted "${title}"`);
       setResumesList(resumesList.filter((r) => r.id !== id));
+      loadActivities();
       showNotification(`Deleted "${title}".`);
     } catch (err: any) {
       showNotification(err?.message || `Could not delete "${title}".`);
@@ -162,14 +234,20 @@ export default function DashboardPage() {
 
   const handleExport = (id: string, title: string) => {
     sessionStorage.setItem('hireflow_pending_export', 'pdf');
+    if (!isAuthenticated()) {
+      rememberCurrentLocationForRedirect('/app/builder', `?id=${id}`);
+      navigate('/login');
+      return;
+    }
     navigate(`/app/builder?id=${id}`);
   };
 
+  const analyzedResumes = resumesList.filter((r) => typeof r.atsScore === 'number' && r.atsScore >= 0);
   const latestAtsScore = resumesList[0]?.atsScore ?? null;
   const atsPotential = latestAtsScore !== null ? Math.max(0, 100 - latestAtsScore) : null;
   const avgAtsScore =
-    resumesList.length > 0
-      ? Math.round(resumesList.reduce((sum, r) => sum + (r.atsScore || 0), 0) / resumesList.length)
+    analyzedResumes.length > 0
+      ? Math.round(analyzedResumes.reduce((sum, r) => sum + (r.atsScore || 0), 0) / analyzedResumes.length)
       : null;
 
   return (
@@ -284,7 +362,9 @@ export default function DashboardPage() {
               <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl space-y-1">
                 <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">ATS Score</span>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-2xl font-black text-[#0B192C]">{resumesList[0]?.atsScore ?? '—'}</span>
+                  <span className="text-2xl font-black text-[#0B192C]">
+                    {resumesList[0]?.atsScore !== null && resumesList[0]?.atsScore !== undefined ? resumesList[0].atsScore : '—'}
+                  </span>
                   <span className="text-xs text-slate-500 font-bold">/ 100</span>
                 </div>
               </div>
@@ -292,7 +372,9 @@ export default function DashboardPage() {
               <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl space-y-1">
                 <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Structure Score</span>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-2xl font-black text-[#0B192C]">{resumesList[0]?.healthScore ?? '—'}</span>
+                  <span className="text-2xl font-black text-[#0B192C]">
+                    {resumesList[0]?.healthScore !== null && resumesList[0]?.healthScore !== undefined ? resumesList[0].healthScore : '—'}
+                  </span>
                   <span className="text-xs text-slate-500 font-bold">/ 100</span>
                 </div>
               </div>
@@ -400,7 +482,7 @@ export default function DashboardPage() {
                   <div className="space-y-0.5">
                     <h4 className="text-xs font-bold text-[#0B192C]">{res.title}</h4>
                     <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                      <span>ATS Score: <strong className="text-[#0B192C]">{res.atsScore}%</strong></span>
+                      <span>ATS Score: <strong className="text-[#0B192C]">{res.atsScore !== null && res.atsScore !== undefined ? `${res.atsScore}%` : 'Not analyzed'}</strong></span>
                       <span>&middot;</span>
                       <span>{res.lastModified}</span>
                     </div>
@@ -449,24 +531,21 @@ export default function DashboardPage() {
             <span className="font-mono text-[11px] text-slate-400">Chronological</span>
           </div>
 
-          {resumesList.length === 0 ? (
+          {activityList.length === 0 ? (
             <p className="text-xs text-slate-400 py-6 text-center">
-              Activity from your resumes will show up here once you start building.
+              Your recent resume activity will appear here.
             </p>
           ) : (
             <div className="space-y-4 relative pl-3 before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-              {resumesList.slice(0, 5).map((res, i) => (
-                <div key={res.id} className="relative pl-5 space-y-1">
+              {activityList.slice(0, 5).map((act, i) => (
+                <div key={act.id} className="relative pl-5 space-y-1">
                   <div
                     className={`absolute -left-[5px] top-1.5 w-3 h-3 rounded-full border-2 border-white ring-2 ${
                       i === 0 ? 'bg-[#0B192C] ring-slate-100' : 'bg-slate-400 ring-slate-100'
                     }`}
                   />
-                  <span className="text-[10px] font-mono font-bold text-slate-400 block">{res.lastModified}</span>
-                  <h4 className="text-xs font-bold text-[#0B192C]">{res.title}</h4>
-                  <p className="text-[11px] text-slate-500">
-                    ATS score {res.atsScore}/100 &middot; {res.status}
-                  </p>
+                  <span className="text-[10px] font-mono font-bold text-slate-400 block">{formatActivityTime(act.created_at)}</span>
+                  <h4 className="text-xs font-bold text-[#0B192C]">{act.description || act.activity_type}</h4>
                 </div>
               ))}
             </div>

@@ -22,17 +22,20 @@ import {
   FileUp,
   Code
 } from 'lucide-react';
-import { getStoredUser } from '../lib/api';
+import { getStoredUser, resumes as resumesApi, activity, isAuthenticated } from '../lib/api';
+import { storageService } from '../services/storage.service';
+import { toBackendPayload } from '../lib/resumeMapping';
 import { ParsedResumeData, UploadHistoryItem, ResumeType } from '../types';
 import { GithubImporter } from '../components/GithubImporter';
 import ResumeEditorPage from './ResumeEditorPage';
 import { getDefaultSectionItems, getDefaultCustomSections, suggestResumeType } from '../services/section.reorder';
 import { parseResumeFile } from '../utils/fileParser';
 import { parseResumeText } from '../utils/resumeTextParser';
+import { analyzeResume } from '../services/ats.engine';
 
 export default function ResumeBuilderPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Real logged-in user (from localStorage set during auth)
   const currentUser = getStoredUser();
@@ -103,11 +106,80 @@ export default function ResumeBuilderPage() {
   const [linkedInFile, setLinkedInFile] = useState<File | null>(null);
   const [linkedInDragActive, setLinkedInDragActive] = useState(false);
 
+  // Persists a newly parsed or generated resume to Supabase + Storage if authenticated
+  const persistImportedResume = async (parsedData: ParsedResumeData, file?: File, importType: string = 'upload'): Promise<ParsedResumeData> => {
+    // Calculate initial ATS score immediately so the persisted resume has the canonical score from moment 0
+    let initialAtsScore: number | null = null;
+    try {
+      const report = analyzeResume(parsedData);
+      initialAtsScore = Math.min(report.finalScore, 99);
+      parsedData.atsScore = initialAtsScore;
+    } catch (e) {
+      console.warn('Initial ATS calculation on import notice:', e);
+    }
+
+    if (!isAuthenticated()) {
+      return parsedData;
+    }
+    try {
+      let filePath: string | undefined = undefined;
+      if (file) {
+        try {
+          filePath = await storageService.uploadResumeFile(file);
+        } catch (storageErr) {
+          console.warn('Storage upload notice:', storageErr);
+        }
+      }
+
+      const payload = toBackendPayload({
+        docTitle: parsedData.title || file?.name || 'Untitled Resume',
+        targetRole: parsedData.targetRole || parsedData.personalInfo?.jobTitle || '',
+        personalInfo: parsedData.personalInfo,
+        experiences: parsedData.experiences || [],
+        education: parsedData.education || [],
+        skills: parsedData.skills || '',
+        projects: parsedData.projects || [],
+        certificates: parsedData.certificates || [],
+        achievements: parsedData.achievements || [],
+        resumeType: parsedData.resumeType || 'experienced',
+        sections: parsedData.sectionsOrder,
+        customSections: parsedData.customSections,
+        selectedTemplate: parsedData.templateName || 'Modern',
+        resumeStyling: parsedData.resumeStyling,
+        atsScore: initialAtsScore,
+      });
+
+      const createPayload: any = {
+        ...payload,
+      };
+      if (file) {
+        createPayload.originalFileName = file.name;
+        createPayload.filePath = filePath;
+        createPayload.fileType = file.name.endsWith('.docx') ? 'docx' : 'pdf';
+      }
+
+      const created: any = await resumesApi.create(createPayload);
+      const newId = created?._id || created?.id;
+      if (newId) {
+        parsedData.id = newId;
+        setSearchParams({ id: newId }, { replace: true });
+        const actType = importType === 'upload' ? 'RESUME_UPLOADED' : 'RESUME_CREATED';
+        const desc = file ? `Uploaded resume: ${file.name}` : `Created resume: ${parsedData.title || 'Untitled Resume'}`;
+        await activity.log(actType, newId, desc);
+      }
+    } catch (err) {
+      console.warn('Failed to immediately persist uploaded resume to Supabase:', err);
+    }
+    return parsedData;
+  };
+
   // Helper function: Simulate Processing & Redirect to Editor
   const runImportProcess = (
     title: string,
     steps: string[],
-    dataToImport: ParsedResumeData
+    dataToImport: ParsedResumeData,
+    file?: File,
+    importType: string = 'created'
   ) => {
     setIsProcessing(true);
     setProcessingTitle(title);
@@ -115,6 +187,8 @@ export default function ResumeBuilderPage() {
 
     let stepIdx = 0;
     setCurrentStepText(steps[0]);
+
+    const persistencePromise = persistImportedResume(dataToImport, file, importType);
 
     const interval = setInterval(() => {
       stepIdx++;
@@ -126,18 +200,20 @@ export default function ResumeBuilderPage() {
         setProgressPercent(100);
         setCurrentStepText('Import complete! Opening Resume Editor...');
 
-        // Save imported data to localStorage for persistence
-        try {
-          localStorage.setItem('hireflow_current_resume', JSON.stringify(dataToImport));
-        } catch {
-          // ignore
-        }
+        persistencePromise.then((persistedData) => {
+          // Save imported data to localStorage for persistence
+          try {
+            localStorage.setItem('hireflow_current_resume', JSON.stringify(persistedData));
+          } catch {
+            // ignore
+          }
 
-        setTimeout(() => {
-          setIsProcessing(false);
-          // Show the editor in place — no route change, same page.
-          setShowEditor(true);
-        }, 800);
+          setTimeout(() => {
+            setIsProcessing(false);
+            // Show the editor in place — no route change, same page.
+            setShowEditor(true);
+          }, 400);
+        });
       }
     }, 500);
   };
@@ -314,6 +390,9 @@ export default function ResumeBuilderPage() {
     setProgressPercent(85);
     setCurrentStepText('Auto-filling Resume Editor...');
 
+    // Persist to Supabase + Storage if authenticated
+    parsedData = await persistImportedResume(parsedData, file, 'upload');
+
     // Add to local upload history state
     const newHistoryItem: UploadHistoryItem = {
       id: `upl_${Date.now()}`,
@@ -466,6 +545,9 @@ export default function ResumeBuilderPage() {
 
     setProgressPercent(85);
     setCurrentStepText('Auto-filling Resume Editor...');
+
+    // Persist to Supabase + Storage if authenticated
+    parsedData = await persistImportedResume(parsedData, file, 'linkedin');
 
     try {
       localStorage.setItem('hireflow_current_resume', JSON.stringify(parsedData));

@@ -391,6 +391,25 @@ export default function ATSAnalysisPage() {
       setAtsScore(finalScore);
       mapBackendReport(report, resumeData, jd);
 
+      if (resumeData.id) {
+        try {
+          const { resumes: resumesApi, activity: activityApi } = await import('../lib/api');
+          await resumesApi.update(resumeData.id, { ats_score: finalScore });
+          await activityApi.log('ATS_ANALYZED', resumeData.id, `Completed ATS analysis (Score: ${finalScore}/100)`);
+        } catch (saveErr) {
+          console.warn('[ATSAnalysisPage] Could not update ats_score on backend:', saveErr);
+        }
+      }
+
+      try {
+        const stored = localStorage.getItem('hireflow_current_resume');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          parsed.meta = { ...(parsed.meta || {}), atsScore: finalScore };
+          localStorage.setItem('hireflow_current_resume', JSON.stringify(parsed));
+        }
+      } catch {}
+
       return report;
     } catch (error) {
       console.error('ATS analysis failed:', error);

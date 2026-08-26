@@ -81,9 +81,9 @@ export default function Header() {
         <span className="text-slate-300 select-none">/</span>
 
         <Link
-          to="/login"
+          to="/?auth=login"
           className={`hover:text-blue-600 transition-colors ${
-            location.pathname === '/login' ? 'text-blue-600 underline underline-offset-4' : ''
+            location.pathname === '/login' || location.search.includes('auth=login') ? 'text-blue-600 underline underline-offset-4' : ''
           }`}
         >
           SIGN IN
@@ -91,9 +91,9 @@ export default function Header() {
         <span className="text-slate-300 select-none">/</span>
 
         <Link
-          to="/signup"
+          to="/?auth=signup"
           className={`hover:text-blue-600 transition-colors ${
-            location.pathname === '/signup' ? 'text-blue-600 underline underline-offset-4' : ''
+            location.pathname === '/signup' || location.search.includes('auth=signup') ? 'text-blue-600 underline underline-offset-4' : ''
           }`}
         >
           SIGN UP

@@ -1077,12 +1077,34 @@ export interface ATSEngineOptions {
  *
  * @param resumeData - Parsed candidate resume data
  * @param options - Optional target job description for JD-Match evaluation
+ */
+function normalizeResumeForAnalysis(rd: ParsedResumeData): ParsedResumeData {
+  if (!rd) return rd;
+  const clone = { ...rd };
+  if (Array.isArray((clone as any).skills)) {
+    (clone as any).skills = ((clone as any).skills as any[])
+      .map((s: any) => (typeof s === 'string' ? s : s?.name || s?.title || ''))
+      .filter(Boolean)
+      .join(', ');
+  } else if (typeof clone.skills !== 'string') {
+    (clone as any).skills = '';
+  }
+  return clone;
+}
+
+/**
+ * Main deterministic scoring engine entry point.
+ * Computes individual ATS category scores, overall score, and suggestions.
+ *
+ * @param resumeData Parsed resume data
+ * @param options Engine configuration (e.g. target job description)
  * @returns ATSFullReport containing deterministic scores, rule breakdowns, and fixes
  */
 export function analyzeResume(
-  resumeData: ParsedResumeData,
+  rawResumeData: ParsedResumeData,
   options: ATSEngineOptions = {}
 ): ATSFullReport {
+  const resumeData = normalizeResumeForAnalysis(rawResumeData);
   const jd = options.jobDescription;
   const resumeType: ResumeType = resumeData.resumeType || 'experienced';
 

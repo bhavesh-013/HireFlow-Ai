@@ -3,14 +3,17 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import { isAuthenticated } from '../../lib/api';
+import { rememberCurrentLocationForRedirect } from '../../lib/authGate';
 
-// Guests are allowed to build, upload, edit, preview, and export resumes,
-// and to browse the AI pages themselves — individual AI actions on those
-// pages show a "Login Required" prompt when clicked (see LoginRequiredModal
-// usage in ResumeEditorPage, ATSAnalysisPage, AISuggestionsPage,
-// AICareerCoachPage). Only account-specific pages need a real session to
-// even load.
-const ACCOUNT_ONLY_PREFIXES = ['/app/profile', '/app/settings'];
+// Protected routes requiring authentication to access
+const ACCOUNT_ONLY_PREFIXES = [
+  '/dashboard',
+  '/app/dashboard',
+  '/profile',
+  '/app/profile',
+  '/settings',
+  '/app/settings',
+];
 
 export default function AppLayout() {
   // Single source of truth for sidebar state — shared between Sidebar and
@@ -26,7 +29,8 @@ export default function AppLayout() {
 
   const requiresAccount = ACCOUNT_ONLY_PREFIXES.some((p) => location.pathname.startsWith(p));
   if (requiresAccount && !isAuthenticated()) {
-    return <Navigate to="/login" replace />;
+    rememberCurrentLocationForRedirect(location.pathname, location.search);
+    return <Navigate to="/?auth=login" replace />;
   }
 
   return (

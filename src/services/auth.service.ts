@@ -91,6 +91,22 @@ function mapAuthError(error: any, context: AuthErrorContext): AuthServiceError {
     }
   }
 
+  if (context === 'oauth') {
+    if (lower.includes('cancel') || lower.includes('access_denied') || lower.includes('user_cancelled')) {
+      return new AuthServiceError('Google sign-in was cancelled.', code, status);
+    }
+    if (lower.includes('network') || lower.includes('fetch')) {
+      return new AuthServiceError('Network error. Please check your connection and try again.', code, status);
+    }
+    if (lower.includes('not_enabled') || lower.includes('unsupported provider') || lower.includes('disabled') || lower.includes('provider is not enabled')) {
+      return new AuthServiceError('Google sign-in is not enabled on the server. Please enable Google provider in your Supabase Dashboard.', code, status);
+    }
+    if (lower.includes('popup')) {
+      return new AuthServiceError('Sign-in popup was blocked by your browser. Please allow popups and try again.', code, status);
+    }
+    return new AuthServiceError('Unable to sign in with Google. Please try again.', code, status);
+  }
+
   if (lower.includes('rate limit') || lower.includes('too many requests')) {
     return new AuthServiceError('Too many attempts. Please wait a moment and try again.', code, status);
   }
@@ -116,13 +132,16 @@ function clearSession() {
 }
 
 /** Builds a UserProfile from a Supabase auth user + optional profiles row. */
-function buildProfile(user: { id: string; email?: string | null; user_metadata?: any }, profileData?: any): UserProfile {
+function buildProfile(user: { id: string; email?: string | null; user_metadata?: any; app_metadata?: any }, profileData?: any): UserProfile {
+  const fullName = profileData?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User';
+  const avatarUrl = profileData?.avatar_url || user.user_metadata?.avatar_url || user.user_metadata?.picture || '';
   return {
     id: user.id,
     email: user.email || '',
-    full_name: profileData?.full_name || user.user_metadata?.full_name || user.email?.split('@')[0],
-    name: profileData?.full_name || user.user_metadata?.full_name || user.email?.split('@')[0],
-    avatar_url: profileData?.avatar_url,
+    full_name: fullName,
+    name: fullName,
+    avatar_url: avatarUrl,
+    authProvider: user.app_metadata?.provider || 'google',
     phone: profileData?.phone,
     location: profileData?.location,
     job_title: profileData?.job_title,
@@ -230,13 +249,20 @@ export const authService = {
     return profile;
   },
 
-  async loginWithGoogle() {
+  async loginWithGoogle(redirectTo?: string) {
     if (!isSupabaseConfigured()) {
-      throw new AuthServiceError('Authentication is not configured. Please contact support.');
+      throw new AuthServiceError('Authentication is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.');
     }
+    const destination = redirectTo || `${window.location.origin}/dashboard`;
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/dashboard` },
+      options: {
+        redirectTo: destination,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'select_account',
+        },
+      },
     });
     if (error) throw mapAuthError(error, 'oauth');
     return data;

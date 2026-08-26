@@ -123,3 +123,27 @@ like register/login will return a clean JSON error after ~10s ("buffering
 timed out") instead of crashing the server — that's expected, and confirms
 the error handling works; it'll resolve itself once you plug in a real
 connection string.
+
+## Google OAuth Authentication Setup
+
+To enable real Google OAuth login ("Continue with Google"):
+
+1. **Google Cloud Console Setup:**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/) -> **APIs & Services** -> **Credentials**.
+   - Click **Create Credentials** -> **OAuth Client ID** -> Select **Web application**.
+   - Add **Authorized JavaScript origins**:
+     - Development: `http://localhost:5173` (or your frontend port)
+     - Production: `https://your-domain.com`
+   - Add **Authorized redirect URIs**:
+     - `https://<your-supabase-project-ref>.supabase.co/auth/v1/callback`
+
+2. **Supabase Auth Provider Setup:**
+   - Go to your **Supabase Dashboard** -> **Authentication** -> **Providers** -> **Google**.
+   - Toggle **Enable Google provider**.
+   - Copy **Client ID** and **Client Secret** from Google Cloud Console and paste them into Supabase.
+   - Save changes.
+
+3. **Client Environment Setup:**
+   - Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are defined in your local `.env`.
+   - Restart the frontend development server (`npm run dev`).
+

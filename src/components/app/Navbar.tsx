@@ -45,6 +45,7 @@ export default function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
     name: storedUser?.name || 'User',
     email: storedUser?.email || '',
     avatar: initials,
+    avatarUrl: storedUser?.avatar_url,
   };
 
   useEffect(() => {
@@ -304,8 +305,12 @@ export default function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
             onClick={toggleProfile}
             className="flex items-center gap-2.5 p-1 sm:p-1.5 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer text-left"
           >
-            <div className="w-8 h-8 rounded-full bg-[#0B192C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-              {currentUser.avatar}
+            <div className="w-8 h-8 rounded-full bg-[#0B192C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs overflow-hidden">
+              {currentUser.avatarUrl ? (
+                <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-full h-full object-cover" />
+              ) : (
+                currentUser.avatar
+              )}
             </div>
             <div className="hidden md:block">
               <p className="text-xs font-bold text-[#0B192C] leading-tight">

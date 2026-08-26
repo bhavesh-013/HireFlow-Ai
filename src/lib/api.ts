@@ -5,6 +5,7 @@
 import { authService, UserProfile, AuthServiceError } from '../services/auth.service';
 import { resumeService } from '../services/resume.service';
 import { aiService } from '../services/ai.service';
+import { activityService, ActivityType } from '../services/activity.service';
 
 export interface ApiUser {
   _id: string;
@@ -87,9 +88,9 @@ export const auth = {
     return user;
   },
 
-  async loginWithGoogle() {
+  async loginWithGoogle(returnUrl?: string) {
     try {
-      return await authService.loginWithGoogle();
+      return await authService.loginWithGoogle(returnUrl);
     } catch (err) {
       throw toApiRequestError(err, 400);
     }
@@ -165,4 +166,10 @@ export const ai = {
     aiService.careerCoach(payload.message || '', payload.activeSection, payload.resumeData),
 };
 
-export default { auth, resumes, ai, getToken, getStoredUser, isAuthenticated };
+export const activity = {
+  log: (type: ActivityType, resumeId?: string | null, description?: string) =>
+    activityService.logActivity(type, resumeId, description),
+  listRecent: (limit?: number) => activityService.listRecent(limit),
+};
+
+export default { auth, resumes, ai, activity, getToken, getStoredUser, isAuthenticated };

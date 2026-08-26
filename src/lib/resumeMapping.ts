@@ -46,15 +46,22 @@ export interface EditorState {
   customSections?: CustomSectionData[];
   selectedTemplate?: string;
   resumeStyling?: ResumeStyling;
+  atsScore?: number | null;
+  structureScore?: number | null;
 }
 
 /** Editor state -> payload for POST/PUT /api/v1/resumes */
 export function toBackendPayload(state: EditorState) {
   const { firstName, lastName } = splitName(state.personalInfo.fullName);
+  const atsScore = typeof state.atsScore === 'number' ? state.atsScore : null;
+  const structureScore = typeof state.structureScore === 'number' ? state.structureScore : null;
 
   return {
     title: state.docTitle || 'Untitled Resume',
     templateName: state.selectedTemplate,
+    ats_score: atsScore,
+    atsScore,
+    structure_score: structureScore,
     resumeData: {
       personalInfo: {
         firstName,
@@ -129,6 +136,8 @@ export function toBackendPayload(state: EditorState) {
         sections: state.sections || [],
         customSections: state.customSections || [],
         resumeStyling: state.resumeStyling || null,
+        atsScore,
+        structureScore,
       },
     },
   };
@@ -140,9 +149,27 @@ export function fromBackendResume(doc: any): EditorState {
   const personalInfo = rd.personalInfo || {};
   const meta = rd.meta || {};
 
+  const atsScore =
+    typeof doc?.ats_score === 'number'
+      ? doc.ats_score
+      : typeof doc?.atsScore === 'number'
+      ? doc.atsScore
+      : typeof meta.atsScore === 'number'
+      ? meta.atsScore
+      : null;
+
+  const structureScore =
+    typeof doc?.structure_score === 'number'
+      ? doc.structure_score
+      : typeof meta.structureScore === 'number'
+      ? meta.structureScore
+      : null;
+
   return {
     docTitle: doc?.title || 'Untitled Resume',
     targetRole: personalInfo.jobTitle || '',
+    atsScore,
+    structureScore,
     personalInfo: {
       fullName: [personalInfo.firstName, personalInfo.lastName].filter(Boolean).join(' '),
       jobTitle: personalInfo.jobTitle || '',
@@ -172,7 +199,11 @@ export function fromBackendResume(doc: any): EditorState {
       currentSem: edu.currentSem || '',
       highlights: (edu.bullets || [])[0] || '',
     })),
-    skills: (rd.skills || []).map((s: any) => s.name).filter(Boolean).join(', '),
+    skills: typeof rd.skills === 'string'
+      ? rd.skills
+      : Array.isArray(rd.skills)
+      ? rd.skills.map((s: any) => (typeof s === 'string' ? s : s?.name || '')).filter(Boolean).join(', ')
+      : '',
     projects: (rd.projects || []).map((proj: any) => ({
       id: proj.id,
       title: proj.name || '',

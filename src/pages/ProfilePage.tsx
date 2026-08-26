@@ -219,10 +219,24 @@ export default function ProfilePage() {
               {/* Circular Profile Avatar */}
               <div
                 onClick={handleAvatarClick}
-                className="relative w-14 h-14 rounded-full bg-[#0B192C] text-white flex items-center justify-center font-bold text-lg shrink-0 cursor-pointer group shadow-xs border border-slate-200 transition-transform hover:scale-105"
+                className="relative w-14 h-14 rounded-full bg-[#0B192C] text-white flex items-center justify-center font-bold text-lg shrink-0 cursor-pointer group shadow-xs border border-slate-200 transition-transform hover:scale-105 overflow-hidden"
                 title="Click to change photo"
               >
-                <span>{profile.avatar}</span>
+                {profile.avatar && (profile.avatar.startsWith('http://') || profile.avatar.startsWith('https://')) ? (
+                  <img src={profile.avatar} alt={profile.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span>
+                    {profile.avatar ||
+                      (profile.name
+                        ? profile.name
+                            .split(' ')
+                            .map((p: string) => p[0])
+                            .join('')
+                            .slice(0, 2)
+                            .toUpperCase()
+                        : 'U')}
+                  </span>
+                )}
 
                 {/* Hover overlay with camera icon */}
                 <div className="absolute inset-0 bg-[#0B192C]/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">

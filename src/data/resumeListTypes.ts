@@ -8,9 +8,9 @@ export interface ResumeItem {
   targetRole: string;
   lastModified: string;
   updatedAt: string;
-  atsScore: number;
-  healthScore: number;
-  tailorScore: number;
+  atsScore: number | null;
+  healthScore: number | null;
+  tailorScore: number | null;
   templateName: string;
   fileSize: string;
   status: 'Published' | 'Draft' | 'Tailored';

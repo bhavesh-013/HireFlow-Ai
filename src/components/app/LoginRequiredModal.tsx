@@ -95,13 +95,19 @@ export default function LoginRequiredModal({
                 Maybe later
               </button>
               <button
-                onClick={() => setInlineMode('login')}
+                onClick={() => {
+                  if (onLogin) onLogin();
+                  else setInlineMode('login');
+                }}
                 className="bg-white border border-slate-300 text-[#0B192C] px-4 py-2 rounded-xl text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Log In
               </button>
               <button
-                onClick={() => setInlineMode('signup')}
+                onClick={() => {
+                  if (onSignup) onSignup();
+                  else setInlineMode('signup');
+                }}
                 className="bg-[#0B192C] text-white px-5 py-2 rounded-xl text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Sign Up Free

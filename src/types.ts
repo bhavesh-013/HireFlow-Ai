@@ -140,6 +140,8 @@ export interface ParsedResumeData {
   achievements?: AchievementItem[];
   customSections?: CustomSectionData[];
   sectionsOrder?: SectionNavItem[];
+  atsScore?: number | null;
+  meta?: Record<string, any>;
 }
 
 export interface UploadHistoryItem {

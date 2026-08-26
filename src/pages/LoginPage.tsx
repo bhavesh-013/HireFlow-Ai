@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowUpRight, Eye, EyeOff, Lock, Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { auth, ApiRequestError } from '../lib/api';
 import { consumeRedirectAfterLogin } from '../lib/authGate';
+import GoogleButton from '../components/GoogleButton';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -12,6 +13,29 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    // Parse any OAuth error returned in URL hash or search params
+    const hash = window.location.hash;
+    const search = window.location.search;
+    const searchParams = new URLSearchParams(search);
+    const hashParams = new URLSearchParams(hash.includes('#') ? hash.substring(1) : hash);
+    const errorDesc =
+      searchParams.get('error_description') ||
+      hashParams.get('error_description') ||
+      searchParams.get('error') ||
+      hashParams.get('error');
+
+    if (errorDesc) {
+      const lower = errorDesc.toLowerCase();
+      if (lower.includes('access_denied') || lower.includes('cancel')) {
+        setError('Google sign-in was cancelled.');
+      } else {
+        setError('Unable to sign in with Google. Please try again.');
+      }
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +71,24 @@ export default function LoginPage() {
         err instanceof ApiRequestError
           ? err.message
           : 'Something went wrong. Please try again.';
+      setError(message);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setGoogleLoading(true);
+
+    try {
+      const redirectPath = consumeRedirectAfterLogin('/dashboard');
+      const redirectUrl = `${window.location.origin}${redirectPath}`;
+      await auth.loginWithGoogle(redirectUrl);
+    } catch (err) {
+      setGoogleLoading(false);
+      const message =
+        err instanceof ApiRequestError
+          ? err.message
+          : 'Unable to sign in with Google. Please try again.';
       setError(message);
     }
   };
@@ -143,7 +185,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading || success}
+            disabled={loading || googleLoading || success}
             className="bg-[#0B192C] text-white w-full py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 mt-2 shadow-xs cursor-pointer disabled:opacity-50"
           >
             {loading ? (
@@ -156,6 +198,22 @@ export default function LoginPage() {
             )}
           </button>
         </form>
+
+        {/* Divider */}
+        <div className="my-5 flex items-center gap-3">
+          <div className="flex-1 border-b border-slate-200" />
+          <span className="font-mono text-xs font-bold text-slate-400 uppercase tracking-wider">
+            OR
+          </span>
+          <div className="flex-1 border-b border-slate-200" />
+        </div>
+
+        {/* Google Authentication Option */}
+        <GoogleButton
+          onClick={handleGoogleLogin}
+          loading={googleLoading}
+          disabled={loading || success}
+        />
 
         <div className="mt-6 pt-5 border-t border-slate-200/80 flex flex-col items-center gap-3">
           <button

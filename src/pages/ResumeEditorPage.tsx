@@ -52,9 +52,9 @@ import {
 } from 'lucide-react';
 import { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } from '../utils/urlValidator';
 import { extractResumeMetrics, fixSummaryGrammar, improveSummaryAts } from '../utils/summaryAi';
-import { resumes as resumesApi, ai as aiApi, ApiRequestError, isAuthenticated, getStoredUser } from '../lib/api';
+import { resumes as resumesApi, ai as aiApi, activity, ApiRequestError, isAuthenticated, getStoredUser } from '../lib/api';
 import { rememberCurrentLocationForRedirect } from '../lib/authGate';
-import LoginRequiredModal from '../components/app/LoginRequiredModal';
+import { authService } from '../services/auth.service';
 import { toBackendPayload, fromBackendResume } from '../lib/resumeMapping';
 import {
   ParsedResumeData,
@@ -90,17 +90,39 @@ export default function ResumeEditorPage() {
   const [isLoadingResume, setIsLoadingResume] = useState<boolean>(!!searchParams.get('id'));
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isAiWorking, setIsAiWorking] = useState(false);
-  const [isAuthGateOpen, setIsAuthGateOpen] = useState(false);
   // Stores which export type ('pdf' | 'docx') to auto-fire after login redirect
   const pendingExportRef = React.useRef<'pdf' | 'docx' | null>(null);
 
-  // Only Export requires authentication. Call this at the top of an export
-  // handler — stores the intent in sessionStorage, opens the modal, returns
-  // true if the action should be blocked.
+  // Only Export requires authentication. Unauthenticated users are redirected
+  // directly to the Sign In page without showing any modal or popup.
   const gateExport = (type: 'pdf' | 'docx'): boolean => {
     if (!isAuthenticated()) {
+      // Immediately write latest resume draft to localStorage so no user edits are lost
+      const currentResume: ParsedResumeData = {
+        title: docTitle,
+        targetRole,
+        personalInfo,
+        experiences,
+        education,
+        skills,
+        projects,
+        certificates,
+        achievements,
+        resumeType,
+        sectionsOrder: sections,
+        customSections,
+        templateName: selectedTemplate,
+        resumeStyling,
+      };
+      try {
+        localStorage.setItem('hireflow_current_resume', JSON.stringify(currentResume));
+      } catch {
+        // ignore
+      }
+
       sessionStorage.setItem('hireflow_pending_export', type);
-      setIsAuthGateOpen(true);
+      rememberCurrentLocationForRedirect(location.pathname, location.search);
+      navigate('/login');
       return true;
     }
     return false;
@@ -358,10 +380,26 @@ export default function ResumeEditorPage() {
   // appropriate export so the user never has to click again.
   useEffect(() => {
     const pending = sessionStorage.getItem('hireflow_pending_export') as 'pdf' | 'docx' | null;
-    if (pending) {
-      if (isAuthenticated()) {
+    if (!pending) return;
+
+    let cancelled = false;
+
+    const checkAndExecuteExport = async () => {
+      let authed = isAuthenticated();
+      if (!authed) {
+        try {
+          const user = await authService.getCurrentUser();
+          authed = !!user;
+        } catch {
+          authed = false;
+        }
+      }
+
+      if (cancelled) return;
+
+      if (authed) {
         sessionStorage.removeItem('hireflow_pending_export');
-        // Delay slightly so the document sheet has time to render.
+        showToast(`Authenticated! Auto-exporting ${pending.toUpperCase()}...`);
         setTimeout(() => {
           if (pending === 'pdf') {
             pendingExportRef.current = 'pdf';
@@ -371,9 +409,15 @@ export default function ResumeEditorPage() {
           }
         }, 600);
       } else {
-        setIsAuthGateOpen(true);
+        sessionStorage.removeItem('hireflow_pending_export');
       }
-    }
+    };
+
+    checkAndExecuteExport();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -451,6 +495,7 @@ export default function ResumeEditorPage() {
         if (mapped.customSections) setCustomSections(mapped.customSections);
         if (mapped.selectedTemplate) setSelectedTemplate(mapped.selectedTemplate);
         if (mapped.resumeStyling) setResumeStyling(mapped.resumeStyling);
+        if (typeof mapped.atsScore === 'number') setLiveAtsScore(mapped.atsScore);
       } catch (err) {
         if (!cancelled) {
           setSaveError(
@@ -583,6 +628,7 @@ export default function ResumeEditorPage() {
             customSections,
             selectedTemplate,
             resumeStyling,
+            atsScore: liveAtsScore,
           });
 
           if (resumeId) {
@@ -593,10 +639,13 @@ export default function ResumeEditorPage() {
             if (newId) {
               setResumeId(newId);
               setSearchParams({ id: newId }, { replace: true });
+              await activity.log('RESUME_CREATED', newId, `Created resume: ${docTitle}`);
             }
           }
           setSaveError(null);
+          setIsSaved(true);
         } catch (err) {
+          setIsSaved(false);
           // Local copy is still safe in localStorage; surface the backend issue softly.
           setSaveError(
             err instanceof ApiRequestError
@@ -605,12 +654,10 @@ export default function ResumeEditorPage() {
           );
         }
       })();
-
-      setIsSaved(true);
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [docTitle, targetRole, personalInfo, experiences, education, skills, projects, certificates, achievements, customSections, sections, resumeType, selectedTemplate, resumeStyling, isLoadingResume]);
+  }, [docTitle, targetRole, personalInfo, experiences, education, skills, projects, certificates, achievements, customSections, sections, resumeType, selectedTemplate, resumeStyling, liveAtsScore, isLoadingResume]);
 
   // ----------------------------------------------------
   // LIVE DETERMINISTIC ATS SCORE CALCULATION (~1s Debounce)
@@ -684,15 +731,36 @@ export default function ResumeEditorPage() {
         setAtsReport(report);
         setLiveAtsScore(clampedScore);
         setAtsLastUpdatedText('Updated just now');
+
+        // Immediately update localStorage current resume with new canonical ATS score
+        try {
+          const stored = localStorage.getItem('hireflow_current_resume');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            parsed.atsScore = clampedScore;
+            parsed.meta = { ...(parsed.meta || {}), atsScore: clampedScore };
+            localStorage.setItem('hireflow_current_resume', JSON.stringify(parsed));
+          }
+        } catch {}
+
+        // If authenticated and resume exists, immediately persist to database
+        if (resumeId && isAuthenticated()) {
+          resumesApi.autosave(resumeId, {
+            ats_score: clampedScore,
+            atsScore: clampedScore,
+          }).catch((err) => {
+            console.warn('[ResumeEditor] Background ATS score sync notice:', err);
+          });
+        }
       } catch (err) {
         console.error('Error calculating live ATS score:', err);
       } finally {
         setIsCalculatingAts(false);
       }
-    }, 1000); // 1-second debounce
+    }, 800); // 800ms debounce
 
     return () => clearTimeout(timer);
-  }, [buildActiveResumeSnapshot, jdText, isLoadingResume]);
+  }, [buildActiveResumeSnapshot, jdText, isLoadingResume, resumeId]);
 
   // Helper Toast
   const showToast = (msg: string) => {
@@ -1510,6 +1578,7 @@ export default function ResumeEditorPage() {
   const handleExportPDF = () => {
     if (gateExport('pdf')) return;
     showToast(`Preparing "${docTitle}" for print…`);
+    activity.log('RESUME_EXPORTED_PDF', resumeId, `Exported PDF for "${docTitle}"`);
     // Small delay so the toast renders before the print dialog blocks the UI.
     setTimeout(triggerPrintExport, 200);
   };
@@ -1536,6 +1605,7 @@ export default function ResumeEditorPage() {
       showToast('Generating DOCX document…');
       const filename = await downloadDocxExport(activeData, selectedTemplate);
       showToast(`Exported "${filename}" successfully — valid Microsoft Word document.`);
+      activity.log('RESUME_EXPORTED_DOCX', resumeId, `Exported DOCX for "${docTitle}"`);
     } catch (err) {
       console.error('DOCX export error:', err);
       showToast('DOCX generation failed. Please try again.');
@@ -1678,37 +1748,7 @@ export default function ResumeEditorPage() {
         </div>
       </header>
 
-      {/* Export & Save Auth Gate */}
-      <LoginRequiredModal
-        open={isAuthGateOpen}
-        badge="EXPORT / SAVE"
-        onClose={() => {
-          sessionStorage.removeItem('hireflow_pending_export');
-          setIsAuthGateOpen(false);
-        }}
-        onLogin={() => {
-          rememberCurrentLocationForRedirect(location.pathname, location.search);
-          setIsAuthGateOpen(false);
-          navigate('/login');
-        }}
-        onSignup={() => {
-          rememberCurrentLocationForRedirect(location.pathname, location.search);
-          setIsAuthGateOpen(false);
-          navigate('/signup');
-        }}
-        onSuccess={() => {
-          setIsAuthGateOpen(false);
-          const pendingFormat = sessionStorage.getItem('hireflow_pending_export');
-          sessionStorage.removeItem('hireflow_pending_export');
-          if (pendingFormat === 'docx') {
-            triggerDocxExport();
-          } else {
-            handleExportPDF();
-          }
-          showToast('Authenticated successfully — completing resume export!');
-        }}
-        message="Exporting or saving your resume requires a free account. Sign up or log in — your resume draft is saved and your export will complete automatically."
-      />
+
 
       {/* Toast Notification Banner */}
       {toastMsg && (

@@ -19,7 +19,9 @@ import {
   X,
   Compass
 } from 'lucide-react';
-import { auth, getStoredUser } from '../../lib/api';
+import { auth, getStoredUser, isAuthenticated } from '../../lib/api';
+import { rememberCurrentLocationForRedirect } from '../../lib/authGate';
+import LoginRequiredModal from './LoginRequiredModal';
 import logoIcon from '../../assets/logo-icon.png';
 
 interface SidebarProps {
@@ -40,6 +42,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const [buildGroupOpen, setBuildGroupOpen] = useState(true);
   const [analysisGroupOpen, setAnalysisGroupOpen] = useState(true);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMessage, setAuthModalMessage] = useState('Please sign in first to access your dashboard.');
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(`${path}/`);
@@ -50,15 +54,21 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     navigate('/login');
   };
 
-  // Desktop rule: ONLY the hamburger button opens/closes the sidebar —
-  // clicking a nav item must never auto-close it. Mobile keeps its normal
-  // drawer behavior (picking a page closes the overlay). This checks the
-  // real viewport width at click time (not a stale value from mount), so
-  // it stays correct across resizes without needing new shared state.
   const handleNavClick = () => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       onClose?.();
     }
+  };
+
+  const handleProtectedNavClick = (e: React.MouseEvent, path: string, msg: string) => {
+    if (!isAuthenticated()) {
+      e.preventDefault();
+      rememberCurrentLocationForRedirect(path, '');
+      setAuthModalMessage(msg);
+      setAuthModalOpen(true);
+      return;
+    }
+    handleNavClick();
   };
 
   const navItemClass = (path: string) =>
@@ -94,7 +104,11 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       >
         {/* Brand Logo Header */}
         <div className="p-5 border-b border-slate-800/70 flex items-center justify-between">
-          <NavLink to="/app/dashboard" className="flex items-center gap-3 group">
+          <NavLink
+            to="/app/dashboard"
+            onClick={(e) => handleProtectedNavClick(e, '/app/dashboard', 'Please sign in first to access your dashboard.')}
+            className="flex items-center gap-3 group"
+          >
             <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform overflow-hidden p-1">
               <img src={logoIcon} alt="HireFlow AI" className="w-full h-full object-contain" />
             </div>
@@ -108,10 +122,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             </div>
           </NavLink>
 
-          {/* Close button — mobile drawer only; on desktop the Navbar's
-              hamburger (now a Menu/X toggle) already controls the sidebar,
-              so no extra icon is introduced into the existing desktop
-              sidebar header. */}
+          {/* Close button — mobile drawer only */}
           {onClose && (
             <button
               type="button"
@@ -127,7 +138,11 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         {/* Navigation Menu */}
         <div className="flex-1 overflow-y-auto px-3.5 py-5 space-y-1.5 custom-scrollbar">
           {/* Dashboard */}
-          <NavLink to="/app/dashboard" onClick={handleNavClick} className={navItemClass('/app/dashboard')}>
+          <NavLink
+            to="/app/dashboard"
+            onClick={(e) => handleProtectedNavClick(e, '/app/dashboard', 'Please sign in first to access your dashboard.')}
+            className={navItemClass('/app/dashboard')}
+          >
             <LayoutDashboard size={18} className="shrink-0" />
             <span>Dashboard</span>
           </NavLink>
@@ -193,12 +208,20 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </NavLink>
 
           {/* Profile & Settings */}
-          <NavLink to="/app/profile" onClick={handleNavClick} className={navItemClass('/app/profile')}>
+          <NavLink
+            to="/app/profile"
+            onClick={(e) => handleProtectedNavClick(e, '/app/profile', 'Please sign in first to access your profile.')}
+            className={navItemClass('/app/profile')}
+          >
             <User size={18} className="shrink-0" />
             <span>Profile</span>
           </NavLink>
 
-          <NavLink to="/app/settings" onClick={handleNavClick} className={navItemClass('/app/settings')}>
+          <NavLink
+            to="/app/settings"
+            onClick={(e) => handleProtectedNavClick(e, '/app/settings', 'Please sign in first to access your settings.')}
+            className={navItemClass('/app/settings')}
+          >
             <Settings size={18} className="shrink-0 text-slate-400" />
             <span>Settings</span>
           </NavLink>
@@ -209,7 +232,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           <div className="flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-slate-800/60 transition-colors">
             <NavLink
               to="/app/profile"
-              onClick={handleNavClick}
+              onClick={(e) => handleProtectedNavClick(e, '/app/profile', 'Please sign in first to access your profile.')}
               className="flex items-center gap-3 flex-1 min-w-0"
             >
               <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white shrink-0">
@@ -231,6 +254,22 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </div>
         </div>
       </aside>
+
+      {/* Authentication Required Modal */}
+      <LoginRequiredModal
+        open={authModalOpen}
+        badge="AUTH REQUIRED"
+        message={authModalMessage}
+        onClose={() => setAuthModalOpen(false)}
+        onLogin={() => {
+          setAuthModalOpen(false);
+          navigate('/?auth=login');
+        }}
+        onSignup={() => {
+          setAuthModalOpen(false);
+          navigate('/?auth=signup');
+        }}
+      />
     </>
   );
 }
