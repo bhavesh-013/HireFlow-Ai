@@ -22,7 +22,8 @@ import {
   FileUp,
   Code
 } from 'lucide-react';
-import { getStoredUser, resumes as resumesApi, activity, isAuthenticated } from '../lib/api';
+import { getStoredUser, activity, isAuthenticated } from '../lib/api';
+import { createResume } from '../services/supabaseService';
 import { storageService } from '../services/storage.service';
 import { toBackendPayload } from '../lib/resumeMapping';
 import { ParsedResumeData, UploadHistoryItem, ResumeType } from '../types';
@@ -158,7 +159,7 @@ export default function ResumeBuilderPage() {
         createPayload.fileType = file.name.endsWith('.docx') ? 'docx' : 'pdf';
       }
 
-      const created: any = await resumesApi.create(createPayload);
+      const created: any = await createResume(createPayload);
       const newId = created?._id || created?.id;
       if (newId) {
         parsedData.id = newId;

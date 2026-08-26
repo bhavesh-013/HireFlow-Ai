@@ -5,6 +5,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Info,
   Sparkles,
   ArrowRight,
@@ -68,6 +69,18 @@ import { analyzeJobDescription, type JDAnalysis } from '../services/jd.analyzer'
 import { generateImprovements, applyImprovement, type ImprovementSuggestion } from '../services/ai.improvement';
 import { getRecommendedSectionOrder, type SectionOrderRecommendation } from '../services/section.reorder';
 import { validateResume, type ValidationIssue } from '../services/resume.validator';
+import JobDescriptionInput from '../components/ats/JobDescriptionInput';
+import AnalysisProgressBar from '../components/ats/AnalysisProgressBar';
+import AtsScoreComparisonCard from '../components/ats/AtsScoreComparisonCard';
+import JobAnalysisSection from '../components/ats/JobAnalysisSection';
+import KeywordAnalysisSection from '../components/ats/KeywordAnalysisSection';
+import SkillsGapSection from '../components/ats/SkillsGapSection';
+import ProjectAnalysisSection from '../components/ats/ProjectAnalysisSection';
+import ExperienceAnalysisSection from '../components/ats/ExperienceAnalysisSection';
+import ResumeStructureSection from '../components/ats/ResumeStructureSection';
+import DiffComparisonView from '../components/ats/DiffComparisonView';
+import AtsActionBar from '../components/ats/AtsActionBar';
+import { runAtsLiveOptimization, FullAtsOptimizationResult } from '../services/ats.orchestrator';
 
 export default function ATSAnalysisPage() {
   const navigate = useNavigate();
@@ -81,13 +94,20 @@ export default function ATSAnalysisPage() {
     return false;
   };
 
-  // Scan Mode State: 'general' vs 'jd-match'
-  const [scanMode, setScanMode] = useState<'general' | 'jd-match'>('general');
+  // Analysis Mode State: 'general' vs 'jd' (Single source of truth for ATS tabs)
+  const [analysisMode, setAnalysisMode] = useState<'general' | 'jd'>('general');
   const [isScanning, setIsScanning] = useState(false);
   const [currentResumeName, setCurrentResumeName] = useState('No resume selected');
   const [uploadedTime, setUploadedTime] = useState('12 seconds ago');
-  const [showJdModal, setShowJdModal] = useState(false);
-  const [jobDescription, setJobDescription] = useState('');
+  const [jobDescription, setJobDescription] = useState(
+    `Job Title: Senior Full Stack Software Engineer\nCompany: TechFlow Global\nExperience: 4-6 years\n\nKey Responsibilities:\n• Architect, develop, and deploy scalable web applications using React, TypeScript, Node.js, and PostgreSQL.\n• Design and implement RESTful APIs and GraphQL services with high reliability and low latency.\n• Containerize microservices using Docker and orchestrate deployments via Kubernetes and CI/CD pipelines.\n• Write unit, integration, and end-to-end tests using Jest and Playwright.\n\nRequired Qualifications:\n• 4+ years of professional full-stack development experience.\n• Strong proficiency in TypeScript, JavaScript, React, and Node.js.\n• Hands-on expertise with PostgreSQL, Redis query caching, and relational database indexing.\n• Proven experience with Docker, Kubernetes, and AWS (EC2, S3, RDS, Lambda).`
+  );
+
+  // Live ATS Optimization Orchestration State
+  const [liveOptimizationResult, setLiveOptimizationResult] = useState<FullAtsOptimizationResult | null>(null);
+  const [isLiveOptimizing, setIsLiveOptimizing] = useState(false);
+  const [liveProgress, setLiveProgress] = useState(0);
+  const [liveStepText, setLiveStepText] = useState('Analyzing Job Description...');
 
   // File Upload & Drag and Drop Handlers
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -393,8 +413,9 @@ export default function ATSAnalysisPage() {
 
       if (resumeData.id) {
         try {
-          const { resumes: resumesApi, activity: activityApi } = await import('../lib/api');
-          await resumesApi.update(resumeData.id, { ats_score: finalScore });
+          const { updateResume } = await import('../services/supabaseService');
+          const { activity: activityApi } = await import('../lib/api');
+          await updateResume(resumeData.id, { ats_score: finalScore });
           await activityApi.log('ATS_ANALYZED', resumeData.id, `Completed ATS analysis (Score: ${finalScore}/100)`);
         } catch (saveErr) {
           console.warn('[ATSAnalysisPage] Could not update ats_score on backend:', saveErr);
@@ -534,7 +555,7 @@ export default function ATSAnalysisPage() {
       setPreviewData(parsed);
       setHasResumeData(true);
 
-      const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+      const jd = analysisMode === 'jd' ? jobDescription : undefined;
       const report = await runAnalysis(parsed, jd);
 
       if (report) {
@@ -605,7 +626,7 @@ export default function ATSAnalysisPage() {
     setImprovedSections((prev) => ({ ...prev, skills: true }));
     setMissingKeywords((prev) => prev.map((k) => k.name === kwName ? { ...k, added: true } : k));
 
-    const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+    const jd = analysisMode === 'jd' ? jobDescription : undefined;
     const report = await runAnalysis(updatedResume, jd);
 
     if (report) {
@@ -638,12 +659,12 @@ export default function ATSAnalysisPage() {
       return;
     }
 
-    const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+    const jd = analysisMode === 'jd' ? jobDescription : undefined;
     const report = await runAnalysis(previewData, jd);
 
     if (report) {
       showToast(
-        scanMode === 'jd-match'
+        analysisMode === 'jd'
           ? 'JD Match ATS scan complete — results updated!'
           : `ATS analysis complete — ${ATS_CRITERIA.length} criteria evaluated!`
       );
@@ -673,7 +694,7 @@ export default function ATSAnalysisPage() {
         updatedResume = applyImprovement(updatedResume, imp);
       });
 
-      const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+      const jd = analysisMode === 'jd' ? jobDescription : undefined;
       setPreviewData(updatedResume);
       setImprovedSections((prev) => ({ ...prev, [actionType]: true }));
       setAppliedChangesLog((prev) => [
@@ -704,7 +725,7 @@ export default function ATSAnalysisPage() {
     if (!imp || imp.applied) return;
 
     const updated = applyImprovement(previewData, imp);
-    const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+    const jd = analysisMode === 'jd' ? jobDescription : undefined;
 
     setPreviewData(updated);
     setImprovedSections((prev) => ({ ...prev, [imp.section]: true }));
@@ -756,7 +777,7 @@ export default function ATSAnalysisPage() {
           updatedResume = applyImprovement(updatedResume, imp);
         });
 
-        const jd = scanMode === 'jd-match' ? jobDescription : undefined;
+        const jd = analysisMode === 'jd' ? jobDescription : undefined;
         setPreviewData(updatedResume);
         setImprovedSections({ summary: true, skills: true, experience: true, projects: true });
         setAppliedChangesLog((prev) => [
@@ -788,6 +809,42 @@ export default function ATSAnalysisPage() {
       }
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  // Live Master ATS Optimization & JD Matching Engine
+  const handleRunLiveJobOptimization = async (jdToUse?: string) => {
+    if (gateAiAction()) return;
+    const jd = (jdToUse !== undefined ? jdToUse : jobDescription).trim();
+    if (!jd) {
+      showToast('Please provide a target job description to match against.');
+      return;
+    }
+    if (!previewData || (!previewData.skills && !(previewData.experiences?.length) && !(previewData.projects?.length))) {
+      showToast('Please upload or load a resume to analyze.');
+      return;
+    }
+
+    setIsLiveOptimizing(true);
+    setLiveProgress(5);
+    setLiveStepText('Extracting structured requirements from Job Description...');
+
+    try {
+      const result = await runAtsLiveOptimization(previewData, jd, (step, pct) => {
+        setLiveStepText(step);
+        setLiveProgress(pct);
+      });
+
+      setLiveOptimizationResult(result);
+      setAnalysisMode('jd');
+      setAtsScore(result.scoringBreakdown.overallOptimizedScore);
+      triggerConfetti();
+      showToast(`✨ ATS Live Optimization Complete! +${result.scoringBreakdown.scoreDelta} pts projected score increase.`);
+    } catch (err) {
+      console.error('Live ATS optimization error:', err);
+      showToast('Live optimization encountered an error. Please try again.');
+    } finally {
+      setIsLiveOptimizing(false);
     }
   };
 
@@ -970,37 +1027,33 @@ export default function ATSAnalysisPage() {
             {/* Mode Switcher */}
             <div className="bg-slate-100 p-1 rounded-xl border border-slate-200 flex items-center gap-1">
               <button
+                id="general-audit-tab"
                 onClick={() => {
-                  setScanMode('general');
-                  setShowJdModal(false);
-                  runAnalysis(previewData);
+                  setAnalysisMode('general');
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  scanMode === 'general'
+                  analysisMode === 'general'
                     ? 'bg-white text-[#0B192C] shadow-2xs font-extrabold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <ShieldCheck size={13} className={scanMode === 'general' ? 'text-blue-600' : ''} />
+                <ShieldCheck size={13} className={analysisMode === 'general' ? 'text-blue-600' : ''} />
                 <span>General Audit</span>
               </button>
 
               <button
+                id="jd-match-tab"
                 onClick={() => {
-                  setScanMode('jd-match');
-                  setShowJdModal(true);
+                  setAnalysisMode('jd');
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  scanMode === 'jd-match'
+                  analysisMode === 'jd'
                     ? 'bg-[#0B192C] text-white shadow-2xs font-extrabold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <Target size={13} className={scanMode === 'jd-match' ? 'text-blue-400' : ''} />
+                <Target size={13} className={analysisMode === 'jd' ? 'text-blue-400' : ''} />
                 <span>JD Match</span>
-                <span className="px-1.5 py-0.2 bg-emerald-500 text-white text-[9px] font-bold rounded-full">
-                  Target
-                </span>
               </button>
             </div>
 
@@ -1027,107 +1080,143 @@ export default function ATSAnalysisPage() {
         </div>
 
         {/* Hero Metric Quick-Stats Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 pt-4 border-t border-slate-100 relative z-10">
-          <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
-              CURRENT SCORE
-            </span>
-            <span className="text-xl font-black text-[#0B192C] font-mono">{atsScore} / 100</span>
-          </div>
+        {analysisMode === 'general' ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 pt-4 border-t border-slate-100 relative z-10 animate-in fade-in duration-200">
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                CURRENT SCORE
+              </span>
+              <span className="text-xl font-black text-[#0B192C] font-mono">{atsScore} / 100</span>
+            </div>
 
-          <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/60">
-            <span className="text-[10px] font-mono font-bold text-blue-800 uppercase tracking-wider block">
-              CATEGORIES SCORED
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xl font-black text-blue-900 font-mono">{ATS_CRITERIA.length}</span>
-              <span className="text-[10px] font-extrabold text-blue-700 bg-blue-100 border border-blue-200 px-1.5 py-0.2 rounded-md">
-                Dimensions
+            <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/60">
+              <span className="text-[10px] font-mono font-bold text-blue-800 uppercase tracking-wider block">
+                CATEGORIES SCORED
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl font-black text-blue-900 font-mono">{ATS_CRITERIA.length}</span>
+                <span className="text-[10px] font-extrabold text-blue-700 bg-blue-100 border border-blue-200 px-1.5 py-0.2 rounded-md">
+                  Dimensions
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                PASSED CHECKS
+              </span>
+              <span className="text-xs font-bold text-emerald-800 flex items-center gap-1 mt-1">
+                <CheckCircle size={13} className="text-emerald-600" />
+                {categories.filter((c) => c.score >= 70).length}/{ATS_CRITERIA.length}
+              </span>
+            </div>
+
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                TOP FIX GAIN
+              </span>
+              <span className="text-xs font-bold text-amber-800 flex items-center gap-1 mt-1">
+                <TrendingUp size={13} className="text-amber-500" />
+                +{atsReport?.topFixes[0]?.estimatedAtsGain ?? 0} pts
+              </span>
+            </div>
+
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                MISSING KEYWORDS
+              </span>
+              <span className="text-xs font-bold text-slate-900 font-mono mt-1 block">
+                {atsReport?.missingKeywords.length ?? 0} detected
+              </span>
+            </div>
+
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                ENGINE
+              </span>
+              <span className="text-xs font-bold text-blue-800 font-mono mt-1 block">
+                {atsReport?.analysisSource ? '✦ AI Analysis' : '—'}
               </span>
             </div>
           </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 pt-4 border-t border-slate-100 relative z-10 animate-in fade-in duration-200">
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                TARGET ROLE
+              </span>
+              <span className="text-xs font-bold text-[#0B192C] block truncate mt-1">
+                {liveOptimizationResult?.parsedJd?.jobTitle || jdAnalysis?.targetRole || 'Target Role'}
+              </span>
+            </div>
 
-          <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
-              PASSED CHECKS
-            </span>
-            <span className="text-xs font-bold text-emerald-800 flex items-center gap-1 mt-1">
-              <CheckCircle size={13} className="text-emerald-600" />
-              {categories.filter((c) => c.score >= 70).length}/{ATS_CRITERIA.length}
-            </span>
-          </div>
+            <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/60">
+              <span className="text-[10px] font-mono font-bold text-blue-800 uppercase tracking-wider block">
+                JD MATCH SCORE
+              </span>
+              <span className="text-xl font-black text-blue-900 font-mono">
+                {liveOptimizationResult?.scoringBreakdown?.overallCurrentScore ?? atsScore} / 100
+              </span>
+            </div>
 
-          <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
-              TOP FIX GAIN
-            </span>
-            <span className="text-xs font-bold text-amber-800 flex items-center gap-1 mt-1">
-              <TrendingUp size={13} className="text-amber-500" />
-              +{atsReport?.topFixes[0]?.estimatedAtsGain ?? 0} pts
-            </span>
-          </div>
+            <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/60">
+              <span className="text-[10px] font-mono font-bold text-emerald-800 uppercase tracking-wider block">
+                MATCHED KEYWORDS
+              </span>
+              <span className="text-xs font-bold text-emerald-800 flex items-center gap-1 mt-1">
+                <CheckCircle size={13} className="text-emerald-600" />
+                {liveOptimizationResult?.keywordAnalysis?.matchedKeywords?.length ?? 0} found
+              </span>
+            </div>
 
-          <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
-              MISSING KEYWORDS
-            </span>
-            <span className="text-xs font-bold text-slate-900 font-mono mt-1 block">
-              {atsReport?.missingKeywords.length ?? 0} detected
-            </span>
-          </div>
+            <div className="p-3 bg-red-50/60 rounded-xl border border-red-200/60">
+              <span className="text-[10px] font-mono font-bold text-red-800 uppercase tracking-wider block">
+                MISSING KEYWORDS
+              </span>
+              <span className="text-xs font-bold text-red-800 flex items-center gap-1 mt-1">
+                <AlertCircle size={13} className="text-red-500" />
+                {liveOptimizationResult?.keywordAnalysis?.missingKeywords?.length ?? atsReport?.missingKeywords?.length ?? 0} gap(s)
+              </span>
+            </div>
 
-          <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
-              ENGINE
-            </span>
-            <span className="text-xs font-bold text-blue-800 font-mono mt-1 block">
-              {atsReport?.analysisSource ? '✦ AI Analysis' : '—'}
-            </span>
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                PROJECTED LIFT
+              </span>
+              <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 mt-1">
+                <TrendingUp size={13} className="text-emerald-600" />
+                +{liveOptimizationResult?.scoringBreakdown?.scoreDelta ?? (atsReport?.topFixes[0]?.estimatedAtsGain ?? 0)} pts
+              </span>
+            </div>
+
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/60">
+              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                STATUS
+              </span>
+              <span className="text-xs font-bold text-blue-800 font-mono mt-1 block">
+                {liveOptimizationResult ? '✓ Optimized' : 'Ready to Analyze'}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* JD Match Modal / Expandable Card */}
-      {scanMode === 'jd-match' && showJdModal && (
-        <div className="bg-white border border-blue-200 rounded-2xl p-6 shadow-sm space-y-4 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <Target size={18} className="text-blue-600" />
-              <h2 className="font-bold text-base text-[#0B192C]">Job Description Target Spec</h2>
-            </div>
-            <button onClick={() => setShowJdModal(false)} className="text-slate-400 hover:text-slate-600 text-xs font-bold">
-              Close
-            </button>
-          </div>
-
-          <textarea
-            rows={4}
-            value={jobDescription}
-            onChange={(e) => setJobDescription(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-[#0B192C] font-mono leading-relaxed focus:bg-white focus:outline-none focus:border-blue-600"
-            placeholder="Paste full job posting requirements here..."
-          />
-
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <span className="text-[11px] text-slate-500 font-mono">{jobDescription.length} characters parsed</span>
-            <button
-              onClick={() => {
-                setShowJdModal(false);
-                handleRunScan();
-              }}
-              className="px-5 py-2 bg-[#0B192C] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-            >
-              <Zap size={13} className="text-amber-400" />
-              <span>Run Match Scan</span>
-            </button>
-          </div>
-        </div>
+      {/* Live Analysis Progress Bar */}
+      {isLiveOptimizing && (
+        <AnalysisProgressBar
+          progress={liveProgress}
+          stepText={liveStepText}
+          isCompleted={false}
+        />
       )}
 
       {/* ------------------------------------------------------------------ */}
-      {/* 2. ATS SCORE DASHBOARD HERO CARD                                  */}
+      {/* GENERAL AUDIT MODE CONTENT                                         */}
       {/* ------------------------------------------------------------------ */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-2xs space-y-6">
+      {analysisMode === 'general' && (
+        <div className="space-y-8 animate-in fade-in duration-300">
+          {/* 2. ATS SCORE DASHBOARD HERO CARD */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-2xs space-y-6">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <span className="font-mono text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             01 &middot; ATS SCORE ENGINE
@@ -1217,90 +1306,6 @@ export default function ATSAnalysisPage() {
           </div>
         </div>
       </div>
-
-
-      {/* ------------------------------------------------------------------ */}
-      {/* NEW: JD INTELLIGENCE PANEL (only visible when JD provided)          */}
-      {/* ------------------------------------------------------------------ */}
-      {jdAnalysis && scanMode === 'jd-match' && (
-        <div className="bg-white border border-blue-200/80 rounded-2xl p-6 sm:p-8 shadow-2xs space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <span className="font-mono text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                JD INTELLIGENCE REPORT
-              </span>
-              <h2 className="text-lg font-bold text-[#0B192C] mt-0.5 flex items-center gap-2">
-                <Target size={18} className="text-blue-600" />
-                <span>Job Description Analysis</span>
-              </h2>
-            </div>
-            <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-mono font-bold rounded-lg">
-              {jdAnalysis.industry}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-3 space-y-0.5">
-              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">TARGET ROLE</span>
-              <span className="text-xs font-bold text-[#0B192C] block truncate">{jdAnalysis.targetRole}</span>
-            </div>
-            <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-3 space-y-0.5">
-              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">SENIORITY</span>
-              <span className={`text-xs font-bold block ${jdAnalysis.experienceLevel === 'Senior' || jdAnalysis.experienceLevel === 'Lead' || jdAnalysis.experienceLevel === 'Staff' ? 'text-blue-700' : 'text-slate-800'}`}>
-                {jdAnalysis.experienceLevel} Level
-              </span>
-            </div>
-            <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-3 space-y-0.5">
-              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">MIN EXPERIENCE</span>
-              <span className="text-xs font-bold text-[#0B192C] block">
-                {jdAnalysis.minYearsExperience > 0 ? `${jdAnalysis.minYearsExperience}+ Years` : 'Not Specified'}
-              </span>
-            </div>
-            <div className="bg-slate-50 rounded-xl border border-slate-200/80 p-3 space-y-0.5">
-              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">WORK TYPE</span>
-              <span className="text-xs font-bold text-[#0B192C] block">{jdAnalysis.isRemote ? '🌍 Remote' : '🏢 On-Site / Hybrid'}</span>
-            </div>
-          </div>
-
-          {jdAnalysis.requiredSkills.length > 0 && (
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">REQUIRED SKILLS (from JD)</span>
-              <div className="flex flex-wrap gap-1.5">
-                {jdAnalysis.requiredSkills.slice(0, 15).map((skill) => {
-                  const resumeText = (previewData.skills + ' ' + (previewData.experiences || []).map(e => e.bullets.join(' ')).join(' ')).toLowerCase();
-                  const inResume = resumeText.includes(skill.skill.toLowerCase());
-                  return (
-                    <span
-                      key={skill.skill}
-                      className={`px-2 py-0.5 rounded-md text-[11px] font-bold border font-mono ${
-                        inResume
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-red-50 text-red-800 border-red-200'
-                      }`}
-                    >
-                      {inResume ? '✓' : '✗'} {skill.skill}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {jdAnalysis.responsibilities.length > 0 && (
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">KEY RESPONSIBILITIES (detected)</span>
-              <ul className="space-y-1">
-                {jdAnalysis.responsibilities.slice(0, 5).map((r, i) => (
-                  <li key={i} className="text-xs text-slate-700 flex items-start gap-2">
-                    <span className="text-blue-500 mt-0.5 shrink-0">▸</span>
-                    <span>{r.slice(0, 120)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
 
 
       {/* ------------------------------------------------------------------ */}
@@ -1694,6 +1699,104 @@ export default function ATSAnalysisPage() {
           </div>
         )}
       </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* JD MATCH MODE CONTENT                                              */}
+      {/* ------------------------------------------------------------------ */}
+      {analysisMode === 'jd' && (
+        <div className="space-y-8 animate-in fade-in duration-300">
+          {!jobDescription.trim() && (
+            <div className="p-3.5 bg-blue-50/80 border border-blue-200/80 rounded-xl flex items-center gap-2.5 text-xs text-blue-900 font-medium">
+              <Info size={16} className="text-blue-600 shrink-0" />
+              <span>Add a job description to compare your resume.</span>
+            </div>
+          )}
+
+          {/* Target Job Description Input & Instant Analysis Bar */}
+          <JobDescriptionInput
+            jobDescription={jobDescription}
+            onChange={setJobDescription}
+            onAnalyze={() => handleRunLiveJobOptimization(jobDescription)}
+            isAnalyzing={isLiveOptimizing}
+            hasResume={hasResumeData}
+          />
+
+          {liveOptimizationResult ? (
+            <>
+              {/* 1. Score Comparison Hero (🔴 Before vs 🟢 After) */}
+              <AtsScoreComparisonCard
+                breakdown={liveOptimizationResult.scoringBreakdown}
+                targetRole={liveOptimizationResult.parsedJd.jobTitle}
+              />
+
+              {/* 2. Before / After Comparison & Red/Green Diff */}
+              <DiffComparisonView
+                originalResume={previewData}
+                optimizedResume={liveOptimizationResult.optimizedPackage.optimizedResume}
+                diffReport={liveOptimizationResult.diffReport}
+              />
+
+              {/* 3. Job Description Analysis Section */}
+              <JobAnalysisSection
+                parsedJd={liveOptimizationResult.parsedJd}
+              />
+
+              {/* 4. Categorized Keyword Matching Section */}
+              <KeywordAnalysisSection
+                keywordAnalysis={liveOptimizationResult.keywordAnalysis}
+              />
+
+              {/* 5. Skills Gap & Competency Section */}
+              <SkillsGapSection
+                skillGapAnalysis={liveOptimizationResult.skillGapAnalysis}
+              />
+
+              {/* 6. Technical Project Relevance & Bullet Optimization */}
+              <ProjectAnalysisSection
+                projectAnalysis={liveOptimizationResult.projectAnalysis}
+              />
+
+              {/* 7. Work Experience Action Verbs & STAR Optimization */}
+              <ExperienceAnalysisSection
+                experienceAnalysis={liveOptimizationResult.experienceAnalysis}
+              />
+
+              {/* 8. Resume Structure & Formatting Audit */}
+              <ResumeStructureSection
+                structureAnalysis={liveOptimizationResult.structureAnalysis}
+              />
+
+              {/* 9. Floating / Sticky ATS Action Bar */}
+              <AtsActionBar
+                optimizedResume={liveOptimizationResult.optimizedPackage.optimizedResume}
+                scoreLift={liveOptimizationResult.scoringBreakdown.scoreDelta}
+              />
+            </>
+          ) : (
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-8 sm:p-12 text-center space-y-4 shadow-2xs">
+              <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto border border-blue-200/60">
+                <Target size={28} />
+              </div>
+              <div className="space-y-1 max-w-md mx-auto">
+                <h3 className="text-lg font-bold text-[#0B192C]">Target Job Description Ready</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Click <span className="font-bold text-[#0B192C]">"Analyze Job & Optimize Resume"</span> above to extract required skills, match ATS keywords, identify gaps, and simulate your score boost.
+                </p>
+              </div>
+              <button
+                onClick={() => handleRunLiveJobOptimization(jobDescription)}
+                disabled={isLiveOptimizing || !jobDescription.trim()}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition-all inline-flex items-center gap-2"
+              >
+                <Sparkles size={14} />
+                <span>Run JD Match Analysis</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
         </React.Fragment>
       )}
     </div>

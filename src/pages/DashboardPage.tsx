@@ -23,7 +23,13 @@ import {
   Lock
 } from 'lucide-react';
 import type { ResumeItem } from '../data/resumeListTypes';
-import { resumes as resumesApi, activity as activityApi, isAuthenticated, getStoredUser } from '../lib/api';
+import { activity as activityApi, isAuthenticated, getStoredUser } from '../lib/api';
+import {
+  listResumes,
+  duplicateResume,
+  renameResume,
+  deleteResume,
+} from '../services/supabaseService';
 import { rememberCurrentLocationForRedirect } from '../lib/authGate';
 import { analyzeResume } from '../services/ats.engine';
 
@@ -141,8 +147,7 @@ export default function DashboardPage() {
   const loadResumes = () => {
     setIsLoadingResumes(true);
     setLoadError(null);
-    resumesApi
-      .list()
+    listResumes()
       .then((data: any) => {
         const list = Array.isArray(data) ? data.map(backendResumeToItem) : [];
         setResumesList(list);
@@ -195,7 +200,7 @@ export default function DashboardPage() {
 
   const handleDuplicate = async (id: string, title: string) => {
     try {
-      const created: any = await resumesApi.duplicate(id);
+      const created: any = await duplicateResume(id);
       setResumesList([backendResumeToItem(created), ...resumesList]);
       showNotification(`Duplicated "${title}" successfully.`);
     } catch (err: any) {
@@ -208,7 +213,7 @@ export default function DashboardPage() {
     if (!newTitle || !newTitle.trim() || newTitle === oldTitle) return;
 
     try {
-      await resumesApi.rename(id, newTitle.trim());
+      await renameResume(id, newTitle.trim());
       setResumesList((prev) => prev.map((r) => (r.id === id ? { ...r, title: newTitle.trim() } : r)));
       showNotification(`Renamed resume to "${newTitle.trim()}".`);
     } catch (err: any) {
@@ -222,7 +227,7 @@ export default function DashboardPage() {
     }
 
     try {
-      await resumesApi.remove(id);
+      await deleteResume(id);
       await activityApi.log('RESUME_DELETED', null, `Deleted "${title}"`);
       setResumesList(resumesList.filter((r) => r.id !== id));
       loadActivities();

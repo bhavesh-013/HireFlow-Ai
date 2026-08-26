@@ -52,7 +52,14 @@ import {
 } from 'lucide-react';
 import { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } from '../utils/urlValidator';
 import { extractResumeMetrics, fixSummaryGrammar, improveSummaryAts } from '../utils/summaryAi';
-import { resumes as resumesApi, ai as aiApi, activity, ApiRequestError, isAuthenticated, getStoredUser } from '../lib/api';
+import { ai as aiApi, activity, ApiRequestError, isAuthenticated, getStoredUser } from '../lib/api';
+import {
+  createResume,
+  updateResume,
+  getResume,
+  autosaveResume,
+  isCreatingResume,
+} from '../services/supabaseService';
 import { rememberCurrentLocationForRedirect } from '../lib/authGate';
 import { authService } from '../services/auth.service';
 import { toBackendPayload, fromBackendResume } from '../lib/resumeMapping';
@@ -457,7 +464,7 @@ export default function ResumeEditorPage() {
 
     (async () => {
       try {
-        const doc = await resumesApi.get(resumeId);
+        const doc = await getResume(resumeId);
         if (cancelled) return;
         const mapped = fromBackendResume(doc);
         setDocTitle(mapped.docTitle);
@@ -632,9 +639,9 @@ export default function ResumeEditorPage() {
           });
 
           if (resumeId) {
-            await resumesApi.autosave(resumeId, payload);
+            await autosaveResume(resumeId, payload);
           } else {
-            const created: any = await resumesApi.create(payload);
+            const created: any = await createResume(payload);
             const newId = created._id || created.id;
             if (newId) {
               setResumeId(newId);
@@ -745,7 +752,7 @@ export default function ResumeEditorPage() {
 
         // If authenticated and resume exists, immediately persist to database
         if (resumeId && isAuthenticated()) {
-          resumesApi.autosave(resumeId, {
+          autosaveResume(resumeId, {
             ats_score: clampedScore,
             atsScore: clampedScore,
           }).catch((err) => {
@@ -3349,7 +3356,7 @@ export default function ResumeEditorPage() {
               )}
             </div>
 
-            {/* EXPANDABLE TAILORED RESUME PANEL (BELOW ATS ANALYSIS) */}
+            {/* JOB DESCRIPTION & TARGET ROLE OPTIMIZATION PANEL */}
             <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-4">
               <div
                 onClick={() => setIsTailorPanelExpanded(!isTailorPanelExpanded)}
@@ -3360,17 +3367,12 @@ export default function ResumeEditorPage() {
                     <Sparkles size={14} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-xs text-[#0B192C]">Tailored Resume</h3>
-                    <p className="text-[10px] text-slate-500">Paste a Job Description and optimize your resume for that role.</p>
+                    <h3 className="font-bold text-xs text-[#0B192C]">Target Job Description</h3>
+                    <p className="text-[10px] text-slate-500">Add a Job Description to match keywords and optimize your resume.</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {tailoredResumeData && (
-                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      Tailored Ready
-                    </span>
-                  )}
                   {isTailorPanelExpanded ? (
                     <ChevronUp size={16} className="text-slate-400" />
                   ) : (
@@ -3384,14 +3386,6 @@ export default function ResumeEditorPage() {
                   {/* Mode Tabs */}
                   <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
                     <button
-                      onClick={() => setJdTab('upload')}
-                      className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                        jdTab === 'upload' ? 'bg-white text-[#0B192C] shadow-2xs' : 'text-slate-600 hover:text-[#0B192C]'
-                      }`}
-                    >
-                      Upload JD
-                    </button>
-                    <button
                       onClick={() => setJdTab('paste')}
                       className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
                         jdTab === 'paste' ? 'bg-white text-[#0B192C] shadow-2xs' : 'text-slate-600 hover:text-[#0B192C]'
@@ -3400,12 +3394,20 @@ export default function ResumeEditorPage() {
                       Paste JD
                     </button>
                     <button
+                      onClick={() => setJdTab('upload')}
+                      className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                        jdTab === 'upload' ? 'bg-white text-[#0B192C] shadow-2xs' : 'text-slate-600 hover:text-[#0B192C]'
+                      }`}
+                    >
+                      Upload JD
+                    </button>
+                    <button
                       onClick={() => setJdTab('linkedin')}
                       className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
                         jdTab === 'linkedin' ? 'bg-white text-[#0B192C] shadow-2xs' : 'text-slate-600 hover:text-[#0B192C]'
                       }`}
                     >
-                      Import LinkedIn Job
+                      Import Link
                     </button>
                   </div>
 
@@ -3450,7 +3452,7 @@ export default function ResumeEditorPage() {
                   {jdTab === 'linkedin' && (
                     <div className="space-y-1">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        LinkedIn Job URL / ID
+                        Job Posting URL
                       </label>
                       <input
                         type="text"
@@ -3462,119 +3464,27 @@ export default function ResumeEditorPage() {
                     </div>
                   )}
 
-                  {/* Analyze Job Action Button */}
-                  <button
-                    onClick={handleAnalyzeJd}
-                    disabled={isAnalyzingJd}
-                    className="w-full py-2 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-60 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <Sparkles size={14} className="text-blue-400" />
-                    <span>{isAnalyzingJd ? 'Analyzing Job Description...' : 'Analyze Job'}</span>
-                  </button>
-
-                  {/* Analysis Output Section */}
-                  {jdAnalysisResult && (
-                    <div className="pt-3 border-t border-slate-200 space-y-3 animate-in fade-in duration-200">
-                      {/* Overall Match % */}
-                      <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg flex items-center justify-between">
-                        <span className="font-bold text-xs text-[#0B192C]">Overall Match %</span>
-                        <span className="px-2.5 py-0.5 bg-blue-600 text-white font-mono font-bold text-xs rounded-full">
-                          {jdAnalysisResult.matchPercent}% Match
-                        </span>
-                      </div>
-
-                      {/* Missing Keywords */}
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                          MISSING KEYWORDS
-                        </span>
-                        <div className="flex flex-wrap gap-1">
-                          {jdAnalysisResult.missingKeywords.map((kw) => (
-                            <button
-                              key={kw}
-                              onClick={() => {
-                                if (!skills.includes(kw)) {
-                                  setSkills((prev) => (prev ? `${prev}, ${kw}` : kw));
-                                  showToast(`Added ${kw} to Skills!`);
-                                }
-                              }}
-                              className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-semibold rounded cursor-pointer"
-                            >
-                              + {kw}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Required Skills */}
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                          REQUIRED SKILLS
-                        </span>
-                        <div className="flex flex-wrap gap-1">
-                          {jdAnalysisResult.requiredSkills.map((sk) => (
-                            <span key={sk} className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-medium rounded">
-                              {sk}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Recommended Skills */}
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                          RECOMMENDED SKILLS
-                        </span>
-                        <div className="flex flex-wrap gap-1">
-                          {jdAnalysisResult.recommendedSkills.map((sk) => (
-                            <span key={sk} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-medium rounded">
-                              {sk}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Missing Metrics */}
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                          MISSING METRICS
-                        </span>
-                        <ul className="list-disc list-inside text-[11px] text-slate-600 space-y-0.5 pl-1">
-                          {jdAnalysisResult.missingMetrics.map((m, idx) => (
-                            <li key={idx}>{m}</li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      {/* AI Suggestions */}
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                          AI SUGGESTIONS
-                        </span>
-                        <div className="space-y-1">
-                          {jdAnalysisResult.suggestions.map((sug, idx) => (
-                            <div key={idx} className="p-2 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-700 font-medium">
-                              💡 {sug}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* One click: Generate Tailored Resume */}
-                      <button
-                        onClick={handleGenerateTailoredResume}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-colors"
-                      >
-                        <Sparkles size={15} />
-                        <span>Generate Tailored Resume</span>
-                      </button>
-                    </div>
-                  )}
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={handleAnalyzeJd}
+                      disabled={isAnalyzingJd}
+                      className="flex-1 py-2 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-60 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Sparkles size={14} className="text-blue-400" />
+                      <span>{isAnalyzingJd ? 'Analyzing...' : 'Analyze & Match JD'}</span>
+                    </button>
+                    <button
+                      onClick={() => navigate('/app/ats-analysis')}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                      title="Open Full ATS Deep Dive"
+                    >
+                      <span>Full ATS</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
-
-
 
           </div>
 
