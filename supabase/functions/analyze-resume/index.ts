@@ -1,4 +1,4 @@
-import { serve } from 'https://deno.land/std@0.270.0/http/server.ts';
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import {
   callGeminiApi,
   parseJsonFromGemini,
@@ -10,32 +10,6 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-
-/**
- * ============================================================
- * HIRE FLOW ATS ANALYSIS ENGINE
- * ============================================================
- *
- * Architecture:
- *
- * Resume
- *   ↓
- * Gemini analysis
- *   ↓
- * Validated category scores
- *   ↓
- * Deterministic TypeScript scoring
- *   ↓
- * Final ATS score /100
- *
- * Gemini NEVER decides the final ATS score.
- *
- * ============================================================
- */
-
-/**
- * Total = exactly 100
- */
 const ATS_WEIGHTS = {
   contact: 10,
   structure: 10,
@@ -48,23 +22,6 @@ const ATS_WEIGHTS = {
 } as const;
 
 type CategoryName = keyof typeof ATS_WEIGHTS;
-
-/**
- * Maximum score for each Gemini category.
- *
- * Gemini scores each category from 0 -> 10.
- *
- * TypeScript then converts:
- *
- * category score / 10 * category weight
- */
-const CATEGORY_MAX_SCORE = 10;
-
-/**
- * ============================================================
- * TYPES
- * ============================================================
- */
 
 interface CategoryAnalysis {
   score: number;
@@ -81,11 +38,16 @@ interface JDAnalysis {
   missingKeywords: string[];
   matchedSkills: string[];
   missingSkills: string[];
+  recommendedKeywords: string[];
+  priorityProjects: Array<{
+    project: string;
+    priority: 'high' | 'medium' | 'low';
+    reason: string;
+  }>;
 }
 
 interface GeminiATSResponse {
   categories: Record<CategoryName, CategoryAnalysis>;
-
   issues: Array<{
     severity: 'critical' | 'warning' | 'info';
     category: CategoryName;
@@ -93,305 +55,98 @@ interface GeminiATSResponse {
     message: string;
     suggestion: string;
   }>;
-
   jdMatch: JDAnalysis;
-
   summary: string;
 }
 
-/**
- * ============================================================
- * SYSTEM PROMPT
- * ============================================================
- */
-
 function buildSystemPrompt(): string {
   return `
-You are HireFlow AI's resume analysis engine.
+You are HireFlow AI's ATS resume analysis engine.
 
-Your task is to analyze ONLY the resume information supplied by the user.
+Analyze ONLY information explicitly present in the supplied resume and optional
+job description. You are an analysis engine, not a resume writer.
 
-You are NOT the final ATS scoring engine.
+ABSOLUTE RULES:
+- Never invent companies, jobs, projects, skills, technologies, certifications,
+  achievements, dates, education, responsibilities, links, metrics, percentages,
+  salaries, users, revenue, or performance numbers.
+- Never assume a skill because it is common for a role.
+- Missing information must be reported as missing.
+- Never create fake metrics.
+- Never claim a resume is guaranteed to pass an ATS.
+- Never calculate an overall ATS score.
+- Return category scores only; the application calculates the final score.
 
-Your job is to provide evidence-based category evaluations.
+Analyze exactly these 8 categories:
 
-============================================================
-ABSOLUTE NO-FABRICATION RULES
-============================================================
+1. contact
+   Check name, email, phone, location, LinkedIn, GitHub, portfolio.
 
-NEVER invent:
+2. structure
+   Check clear headings, logical order, useful sections, duplicate sections,
+   missing important sections, and organization.
 
-- companies
-- job titles
-- projects
-- technologies
-- certifications
-- achievements
-- dates
-- education
-- metrics
-- percentages
-- salary
-- users
-- revenue
-- performance numbers
-- GitHub statistics
-- responsibilities
-- links
+3. experience
+   Check role/company clarity, dates, responsibilities, accomplishments,
+   bullet quality, action verbs, and real measurable results.
+   Do not unfairly penalize freshers who lack professional experience.
 
-NEVER assume information that is not present.
+4. skills
+   Check technical skills, relevant technologies, organization, duplication,
+   clarity, and relevance to the supplied JD when available.
 
-If something is missing, report it as missing.
+5. projects
+   Check project title, technologies, description, contribution,
+   implementation details, real results, and actual links.
 
-Do NOT create fake metrics.
+6. education
+   Check degree, institution, dates, academic information, and consistency.
 
-Do NOT create fake achievements.
+7. formatting
+   Check standard headings, readable text, consistent dates and bullets,
+   excessive decoration, tables/text structures that may hinder parsing,
+   and unusual symbols.
 
-Do NOT create fake ATS compatibility claims.
+8. contentQuality
+   Check grammar, spelling, clarity, conciseness, action verbs, repetition,
+   vague statements, bullet quality, and professional tone.
 
-Do NOT say that a resume is "100% ATS compatible".
+Score every category from 0 to 10:
+10 excellent, 8-9 strong, 6-7 acceptable, 4-5 needs improvement,
+2-3 weak, 0-1 severely incomplete.
 
-Do NOT say that the resume will definitely pass an ATS.
+JOB DESCRIPTION:
+If a JD is supplied:
+- compare resume keywords and skills against the JD;
+- identify matched and genuinely missing keywords;
+- recommend a keyword only when it is relevant and supported by existing
+  resume evidence;
+- rank existing resume projects by relevance;
+- do not invent projects or skills.
 
-ATS systems differ by employer and configuration.
-
-============================================================
-SCORING
-============================================================
-
-Score each category from 0 to 10.
-
-10 = excellent evidence and implementation
-8-9 = strong
-6-7 = acceptable
-4-5 = needs improvement
-2-3 = weak
-0-1 = severely incomplete
-
-The category score MUST be based only on evidence in the supplied resume.
-
-Do not inflate scores simply because the resume looks professional.
-
-============================================================
-CATEGORIES
-============================================================
-
-1. CONTACT
-
-Evaluate:
-
-- name
-- email
-- phone
-- location
-- LinkedIn if provided
-- GitHub if provided
-- portfolio if provided
-
-Do not penalize the candidate for optional links excessively.
-
-============================================================
-
-2. STRUCTURE
-
-Evaluate:
-
-- clear section headings
-- logical ordering
-- appropriate sections
-- duplicate sections
-- missing important sections
-- section organization
-
-============================================================
-
-3. EXPERIENCE
-
-Evaluate:
-
-- clarity of roles
-- company information
-- dates
-- responsibilities
-- accomplishments
-- bullet quality
-- measurable results when they actually exist
+If no JD is supplied:
+jdMatch.available = false
+matchScore = null
+matchedKeywords = []
+missingKeywords = []
+matchedSkills = []
+missingSkills = []
+recommendedKeywords = []
+priorityProjects = []
 
 IMPORTANT:
-
-Do not penalize a candidate simply because they do not have
-professional experience if they are a fresher.
-
-For fresher resumes, projects/internships/education should carry
-more importance.
-
-============================================================
-
-4. SKILLS
-
-Evaluate:
-
-- technical skills
-- relevant technologies
-- organization
-- duplication
-- clarity
-- relevance to the supplied target job if a JD exists
-
-Do not recommend a technology merely because it is popular.
-
-If a skill is missing from the resume and the JD requires it,
-report it as a missing keyword.
-
-============================================================
-
-5. PROJECTS
-
-Evaluate:
-
-- project title
-- technology stack
-- project description
-- contribution
-- implementation details
-- measurable results if actually provided
-- links if actually provided
-
-Never invent project metrics.
-
-============================================================
-
-6. EDUCATION
-
-Evaluate:
-
-- degree
-- institution
-- dates
-- academic information
-- consistency
-
-============================================================
-
-7. FORMATTING
-
-Evaluate ATS-readable characteristics such as:
-
-- standard headings
-- readable text
-- consistent formatting
-- consistent dates
-- bullet consistency
-- excessive decoration
-- tables/text structures that may make parsing harder
-- unusual symbols
-
-Do NOT claim compatibility with a specific proprietary ATS.
-
-============================================================
-
-8. CONTENT QUALITY
-
-Evaluate:
-
-- grammar
-- spelling
-- clarity
-- concise writing
-- action verbs
-- unnecessary repetition
-- vague statements
-- bullet quality
-- professional tone
-
-============================================================
-JOB DESCRIPTION
-============================================================
-
-If a job description is provided:
-
-Perform keyword and skill comparison.
-
-Only report a keyword as missing when:
-
-1. it is meaningfully present in the job description, AND
-2. it is genuinely absent from the supplied resume.
-
+A keyword is not "matched" merely because it is vaguely related.
+Use clear semantic equivalence only.
 Do not recommend unrelated technologies.
 
-If no job description is provided:
+ISSUES:
+Return only meaningful issues. Every issue must contain:
+severity, category, title, message, suggestion.
 
-jdMatch.available MUST be false.
+Suggestions must be actionable using existing resume information or tell the
+user to provide their own missing information.
 
-jdMatch.matchScore MUST be null.
-
-matchedKeywords MUST be [].
-
-missingKeywords MUST be [].
-
-matchedSkills MUST be [].
-
-missingSkills MUST be [].
-
-DO NOT assign a fake JD score such as 70.
-
-============================================================
-ISSUES
-============================================================
-
-Return only meaningful issues.
-
-Prioritize:
-
-critical
-warning
-info
-
-Each issue must contain:
-
-- category
-- title
-- message
-- actionable suggestion
-
-Every suggestion must be possible using existing resume information,
-OR clearly tell the user to provide their own missing information.
-
-Example:
-
-GOOD:
-"Add your actual GitHub URL if you have one."
-
-BAD:
-"Add GitHub: github.com/example-user"
-
-============================================================
-IMPORTANT
-============================================================
-
-Do NOT calculate an overall ATS score.
-
-Do NOT return projected ATS score.
-
-Do NOT return ATS gain.
-
-Do NOT claim the resume will pass ATS.
-
-Return category scores only.
-
-The application code will calculate the final score.
-
-============================================================
-OUTPUT
-============================================================
-
-Return ONLY valid JSON.
-
-No markdown.
-
-No explanation outside JSON.
-
-Schema:
+Return ONLY valid JSON with this shape:
 
 {
   "categories": {
@@ -410,213 +165,178 @@ Schema:
     "formatting": {},
     "contentQuality": {}
   },
-
-  "issues": [
-    {
-      "severity": "critical",
-      "category": "experience",
-      "title": "",
-      "message": "",
-      "suggestion": ""
-    }
-  ],
-
+  "issues": [],
   "jdMatch": {
     "available": false,
     "matchScore": null,
     "matchedKeywords": [],
     "missingKeywords": [],
     "matchedSkills": [],
-    "missingSkills": []
+    "missingSkills": [],
+    "recommendedKeywords": [],
+    "priorityProjects": []
   },
-
   "summary": ""
 }
 `;
 }
 
-/**
- * ============================================================
- * HELPERS
- * ============================================================
- */
-
 function clamp(value: unknown, min = 0, max = 10): number {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return min;
-  }
-
-  return Math.min(max, Math.max(min, numeric));
+  const n = Number(value);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
 }
 
-function cleanStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+function cleanStringArray(value: unknown, limit = 20): string[] {
+  if (!Array.isArray(value)) return [];
 
   return value
-    .filter((item) => typeof item === 'string')
+    .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim())
     .filter(Boolean)
-    .slice(0, 20);
+    .slice(0, limit);
 }
 
-function normalizeCategory(
-  value: unknown,
-): CategoryAnalysis {
-  const category =
+function normalizeCategory(value: unknown): CategoryAnalysis {
+  const item =
     value && typeof value === 'object'
-      ? value as Record<string, unknown>
+      ? (value as Record<string, unknown>)
       : {};
 
   return {
-    score: clamp(category.score),
+    score: clamp(item.score),
     maxScore: 10,
-    findings: cleanStringArray(category.findings),
-    issues: cleanStringArray(category.issues),
-    suggestions: cleanStringArray(category.suggestions),
+    findings: cleanStringArray(item.findings),
+    issues: cleanStringArray(item.issues),
+    suggestions: cleanStringArray(item.suggestions),
   };
 }
 
-/**
- * Convert Gemini output into a safe predictable object.
- */
-function normalizeGeminiResponse(
-  input: unknown,
-): GeminiATSResponse {
+function normalizePriorityProjects(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const p = item as Record<string, unknown>;
+      const priority =
+        p.priority === 'high' ||
+        p.priority === 'medium' ||
+        p.priority === 'low'
+          ? p.priority
+          : 'medium';
+
+      return {
+        project:
+          typeof p.project === 'string' ? p.project.trim() : '',
+        priority,
+        reason:
+          typeof p.reason === 'string' ? p.reason.trim() : '',
+      };
+    })
+    .filter((item) => item.project && item.reason)
+    .slice(0, 10);
+}
+
+function normalizeGeminiResponse(input: unknown): GeminiATSResponse {
   const data =
     input && typeof input === 'object'
-      ? input as Record<string, unknown>
+      ? (input as Record<string, unknown>)
       : {};
 
   const rawCategories =
-    data.categories &&
-    typeof data.categories === 'object'
-      ? data.categories as Record<string, unknown>
+    data.categories && typeof data.categories === 'object'
+      ? (data.categories as Record<string, unknown>)
       : {};
 
   const categories = {} as Record<CategoryName, CategoryAnalysis>;
 
-  for (const category of Object.keys(
-    ATS_WEIGHTS,
-  ) as CategoryName[]) {
-    categories[category] = normalizeCategory(
-      rawCategories[category],
-    );
+  for (const category of Object.keys(ATS_WEIGHTS) as CategoryName[]) {
+    categories[category] = normalizeCategory(rawCategories[category]);
   }
 
-  const rawIssues = Array.isArray(data.issues)
-    ? data.issues
-    : [];
+  const rawIssues = Array.isArray(data.issues) ? data.issues : [];
 
   const issues = rawIssues
-    .filter(
-      (issue) =>
-        issue &&
-        typeof issue === 'object',
-    )
-    .map((issue) => {
-      const item = issue as Record<string, unknown>;
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const issue = item as Record<string, unknown>;
 
       const severity =
-        item.severity === 'critical' ||
-        item.severity === 'warning' ||
-        item.severity === 'info'
-          ? item.severity
+        issue.severity === 'critical' ||
+        issue.severity === 'warning' ||
+        issue.severity === 'info'
+          ? issue.severity
           : 'warning';
 
       const category =
-        Object.prototype.hasOwnProperty.call(
-          ATS_WEIGHTS,
-          item.category,
-        )
-          ? item.category as CategoryName
+        typeof issue.category === 'string' &&
+        Object.prototype.hasOwnProperty.call(ATS_WEIGHTS, issue.category)
+          ? (issue.category as CategoryName)
           : 'contentQuality';
 
       return {
         severity,
         category,
         title:
-          typeof item.title === 'string'
-            ? item.title.trim()
+          typeof issue.title === 'string'
+            ? issue.title.trim()
             : 'Resume issue',
         message:
-          typeof item.message === 'string'
-            ? item.message.trim()
+          typeof issue.message === 'string'
+            ? issue.message.trim()
             : '',
         suggestion:
-          typeof item.suggestion === 'string'
-            ? item.suggestion.trim()
+          typeof issue.suggestion === 'string'
+            ? issue.suggestion.trim()
             : '',
       };
     })
-    .filter(
-      (issue) =>
-        issue.title &&
-        issue.message,
-    )
+    .filter((item) => item.title && item.message)
     .slice(0, 30);
 
   const rawJD =
-    data.jdMatch &&
-    typeof data.jdMatch === 'object'
-      ? data.jdMatch as Record<string, unknown>
+    data.jdMatch && typeof data.jdMatch === 'object'
+      ? (data.jdMatch as Record<string, unknown>)
       : {};
 
-  const jdAvailable =
-    rawJD.available === true;
+  const available = rawJD.available === true;
+
+  let matchScore: number | null = null;
+
+  if (available && Number.isFinite(Number(rawJD.matchScore))) {
+    matchScore = Math.round(
+      Math.min(100, Math.max(0, Number(rawJD.matchScore))),
+    );
+  }
 
   const jdMatch: JDAnalysis = {
-    available: jdAvailable,
-
-    matchScore:
-      jdAvailable &&
-      Number.isFinite(Number(rawJD.matchScore))
-        ? Math.round(
-            Math.min(
-              100,
-              Math.max(
-                0,
-                Number(rawJD.matchScore),
-              ),
-            ),
-          )
-        : null,
-
-    matchedKeywords: jdAvailable
-      ? cleanStringArray(
-          rawJD.matchedKeywords,
-        )
+    available,
+    matchScore,
+    matchedKeywords: available
+      ? cleanStringArray(rawJD.matchedKeywords, 50)
       : [],
-
-    missingKeywords: jdAvailable
-      ? cleanStringArray(
-          rawJD.missingKeywords,
-        )
+    missingKeywords: available
+      ? cleanStringArray(rawJD.missingKeywords, 50)
       : [],
-
-    matchedSkills: jdAvailable
-      ? cleanStringArray(
-          rawJD.matchedSkills,
-        )
+    matchedSkills: available
+      ? cleanStringArray(rawJD.matchedSkills, 50)
       : [],
-
-    missingSkills: jdAvailable
-      ? cleanStringArray(
-          rawJD.missingSkills,
-        )
+    missingSkills: available
+      ? cleanStringArray(rawJD.missingSkills, 50)
+      : [],
+    recommendedKeywords: available
+      ? cleanStringArray(rawJD.recommendedKeywords, 50)
+      : [],
+    priorityProjects: available
+      ? normalizePriorityProjects(rawJD.priorityProjects)
       : [],
   };
 
   return {
     categories,
-
     issues,
-
     jdMatch,
-
     summary:
       typeof data.summary === 'string'
         ? data.summary.trim()
@@ -624,42 +344,9 @@ function normalizeGeminiResponse(
   };
 }
 
-/**
- * ============================================================
- * DETERMINISTIC SCORE CALCULATION
- * ============================================================
- *
- * Gemini provides category scores 0-10.
- *
- * This function alone calculates the final ATS score.
- *
- * Example:
- *
- * Experience = 8/10
- * Weight = 20
- *
- * contribution = 8 / 10 * 20
- *             = 16
- *
- * All category contributions total exactly 100.
- */
 function calculateATSScore(
-  categories: Record<
-    CategoryName,
-    CategoryAnalysis
-  >,
-): {
-  score: number;
-  breakdown: Record<
-    CategoryName,
-    {
-      score: number;
-      maxScore: number;
-      weight: number;
-      contribution: number;
-    }
-  >;
-} {
+  categories: Record<CategoryName, CategoryAnalysis>,
+) {
   let total = 0;
 
   const breakdown = {} as Record<
@@ -672,81 +359,40 @@ function calculateATSScore(
     }
   >;
 
-  for (
-    const category of Object.keys(
-      ATS_WEIGHTS,
-    ) as CategoryName[]
-  ) {
+  for (const category of Object.keys(ATS_WEIGHTS) as CategoryName[]) {
     const weight = ATS_WEIGHTS[category];
-
-    const categoryScore = clamp(
-      categories[category]?.score ?? 0,
-      0,
-      10,
-    );
-
-    const contribution =
-      (categoryScore / CATEGORY_MAX_SCORE) *
-      weight;
+    const score = clamp(categories[category]?.score, 0, 10);
+    const contribution = (score / 10) * weight;
 
     total += contribution;
 
     breakdown[category] = {
-      score: categoryScore,
-      maxScore: CATEGORY_MAX_SCORE,
+      score,
+      maxScore: 10,
       weight,
-      contribution: Number(
-        contribution.toFixed(2),
-      ),
+      contribution: Number(contribution.toFixed(2)),
     };
   }
 
   return {
-    score: Math.round(
-      Math.min(
-        100,
-        Math.max(0, total),
-      ),
-    ),
-
+    score: Math.round(Math.min(100, Math.max(0, total))),
     breakdown,
   };
 }
 
-/**
- * ============================================================
- * DETERMINISTIC RESUME FACTS
- * ============================================================
- *
- * These facts are NOT AI generated.
- *
- * They are used to give the frontend useful information without
- * allowing Gemini to invent things.
- */
-
-function stringifyResumeData(
-  resumeData: unknown,
-): string {
+function stringifyResumeData(resumeData: unknown): string {
   try {
-    return JSON.stringify(
-      resumeData ?? {},
-    );
+    return JSON.stringify(resumeData ?? {});
   } catch {
     return '';
   }
 }
 
 function countWords(text: string): number {
-  return text
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .length;
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function extractEmails(
-  text: string,
-): string[] {
+function extractEmails(text: string): string[] {
   return Array.from(
     new Set(
       text.match(
@@ -756,520 +402,258 @@ function extractEmails(
   );
 }
 
-function extractPhones(
-  text: string,
-): string[] {
+function extractPhones(text: string): string[] {
   return Array.from(
     new Set(
-      text.match(
-        /(?:\+?\d[\d\s().-]{8,}\d)/g,
-      ) ?? [],
+      text.match(/(?:\+?\d[\d\s().-]{8,}\d)/g) ?? [],
     ),
   );
 }
 
-function getResumeFacts(
-  resumeData: unknown,
-) {
-  const text =
-    stringifyResumeData(
-      resumeData,
-    );
-
-  const words = countWords(text);
-
-  const emails =
-    extractEmails(text);
-
-  const phones =
-    extractPhones(text);
+function getResumeFacts(resumeData: unknown) {
+  const text = stringifyResumeData(resumeData);
+  const emails = extractEmails(text);
+  const phones = extractPhones(text);
 
   return {
-    wordCount: words,
-
-    hasEmail:
-      emails.length > 0,
-
-    hasPhone:
-      phones.length > 0,
-
+    wordCount: countWords(text),
+    hasEmail: emails.length > 0,
+    hasPhone: phones.length > 0,
     emails,
-
     phones,
-
-    hasGithub:
-      /github\.com/i.test(text),
-
-    hasLinkedIn:
-      /linkedin\.com/i.test(text),
-
-    hasPortfolio:
-      /portfolio|personal website/i.test(
-        text,
-      ),
+    hasGithub: /github\.com/i.test(text),
+    hasLinkedIn: /linkedin\.com/i.test(text),
+    hasPortfolio: /portfolio|personal website/i.test(text),
   };
 }
 
-/**
- * ============================================================
- * CATEGORY HELPERS
- * ============================================================
- */
-
-function getCategorySummary(
-  score: number,
-): string {
-  if (score >= 9) {
-    return 'Excellent';
-  }
-
-  if (score >= 8) {
-    return 'Strong';
-  }
-
-  if (score >= 6) {
-    return 'Good';
-  }
-
-  if (score >= 4) {
-    return 'Needs improvement';
-  }
-
+function getCategorySummary(score: number): string {
+  if (score >= 9) return 'Excellent';
+  if (score >= 8) return 'Strong';
+  if (score >= 6) return 'Good';
+  if (score >= 4) return 'Needs improvement';
   return 'Weak';
 }
 
 function buildCategoryUI(
-  categories: Record<
-    CategoryName,
-    CategoryAnalysis
-  >,
+  categories: Record<CategoryName, CategoryAnalysis>,
 ) {
-  return (
-    Object.keys(
-      ATS_WEIGHTS,
-    ) as CategoryName[]
-  ).map((category) => {
-    const item =
-      categories[category];
+  return (Object.keys(ATS_WEIGHTS) as CategoryName[]).map(
+    (category) => {
+      const item = categories[category];
 
-    return {
-      id: category,
+      const nameMap: Record<CategoryName, string> = {
+        contact: 'Contact',
+        structure: 'Structure',
+        experience: 'Experience',
+        skills: 'Skills',
+        projects: 'Projects',
+        education: 'Education',
+        formatting: 'Formatting',
+        contentQuality: 'Content Quality',
+      };
 
-      name:
-        category === 'contentQuality'
-          ? 'Content Quality'
-          : category.charAt(0).toUpperCase() +
-            category.slice(1),
-
-      score: item.score,
-
-      maxScore: 10,
-
-      status:
-        getCategorySummary(
-          item.score,
-        ),
-
-      weight:
-        ATS_WEIGHTS[category],
-
-      findings:
-        item.findings,
-
-      issues:
-        item.issues,
-
-      suggestions:
-        item.suggestions,
-    };
-  });
+      return {
+        id: category,
+        name: nameMap[category],
+        score: item.score,
+        maxScore: 10,
+        status: getCategorySummary(item.score),
+        weight: ATS_WEIGHTS[category],
+        findings: item.findings,
+        issues: item.issues,
+        suggestions: item.suggestions,
+      };
+    },
+  );
 }
 
-/**
- * ============================================================
- * MAIN SERVER
- * ============================================================
- */
+function errorResponse(message: string, status = 500) {
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error: message,
+    }),
+    {
+      status,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+}
 
 serve(async (req) => {
-  /**
-   * CORS
-   */
+  // Browser CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response(
-      'ok',
-      {
-        headers: corsHeaders,
-      },
-    );
+    return new Response('ok', {
+      status: 200,
+      headers: corsHeaders,
+    });
   }
 
-  /**
-   * Only POST allowed.
-   */
+  // Only POST is supported
   if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: 'Method not allowed',
-      }),
-      {
-        status: 405,
-        headers: {
-          ...corsHeaders,
-          'Content-Type':
-            'application/json',
-        },
-      },
-    );
+    return errorResponse('Method not allowed', 405);
   }
 
   try {
-    /**
-     * --------------------------------------------------------
-     * READ REQUEST
-     * --------------------------------------------------------
-     */
+    const body = await req.json();
 
-    const body =
-      await req.json();
-
-    const resumeData =
-      body?.resumeData ?? {};
+    const resumeData = body?.resumeData ?? {};
 
     const targetJobDescription =
-      typeof body?.targetJobDescription ===
-      'string'
+      typeof body?.targetJobDescription === 'string'
         ? body.targetJobDescription.trim()
         : '';
 
-    /**
-     * --------------------------------------------------------
-     * VALIDATE RESUME
-     * --------------------------------------------------------
-     */
+    const resumeString = stringifyResumeData(resumeData);
 
-    const resumeString =
-      stringifyResumeData(
-        resumeData,
-      );
-
-    if (
-      !resumeString ||
-      resumeString === '{}'
-    ) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error:
-            'No resume data was provided.',
-        }),
-        {
-          status: 400,
-          headers: {
-            ...corsHeaders,
-            'Content-Type':
-              'application/json',
-          },
-        },
+    if (!resumeString || resumeString === '{}') {
+      return errorResponse(
+        'No resume data was provided.',
+        400,
       );
     }
 
-    /**
-     * --------------------------------------------------------
-     * BUILD PROMPT
-     * --------------------------------------------------------
-     */
-
-    const systemPrompt =
-      buildSystemPrompt();
+    const systemPrompt = buildSystemPrompt();
 
     const userPrompt = `
-Analyze the following resume.
+Analyze this resume using the rules in the system prompt.
 
-============================================================
-RESUME DATA
-============================================================
-
+RESUME DATA:
 ${resumeString}
 
-============================================================
-TARGET JOB DESCRIPTION
-============================================================
-
+TARGET JOB DESCRIPTION:
 ${
-  targetJobDescription
-    ? targetJobDescription
-    : 'NO JOB DESCRIPTION PROVIDED'
+  targetJobDescription ||
+  'NO JOB DESCRIPTION PROVIDED'
 }
 
-============================================================
-FINAL INSTRUCTIONS
-============================================================
-
-Analyze only the supplied information.
-
-If there is no job description:
-
-- jdMatch.available = false
-- jdMatch.matchScore = null
-- matchedKeywords = []
-- missingKeywords = []
-- matchedSkills = []
-- missingSkills = []
-
-Do not create an overall ATS score.
-
-Do not create a projected score.
-
-Do not create ATS gain.
-
-Return strict JSON only.
+IMPORTANT:
+- Analyze only supplied information.
+- Do not invent facts.
+- Do not calculate an overall ATS score.
+- If there is no JD, disable jdMatch.
+- Return strict JSON only.
 `;
 
-    /**
-     * --------------------------------------------------------
-     * GEMINI
-     * --------------------------------------------------------
-     */
+    const rawResponse = await callGeminiApi({
+      systemPrompt,
+      userPrompt,
+      temperature: 0.1,
+      maxTokens: 8192,
+    });
 
-    const rawResponse =
-      await callGeminiApi({
-        systemPrompt,
-        userPrompt,
+    const parsed = parseJsonFromGemini(rawResponse);
+    const analysis = normalizeGeminiResponse(parsed);
 
-        /**
-         * Low temperature is intentional.
-         *
-         * Resume analysis should be consistent,
-         * not creative.
-         */
-        temperature: 0.1,
+    // Final ATS score is deterministic and calculated by TypeScript.
+    const scoring = calculateATSScore(analysis.categories);
 
-        maxTokens: 8192,
-      });
+    const facts = getResumeFacts(resumeData);
+    const categoryList = buildCategoryUI(analysis.categories);
 
-    /**
-     * --------------------------------------------------------
-     * PARSE GEMINI
-     * --------------------------------------------------------
-     */
+    const passedCategories = categoryList.filter(
+      (category) => category.score >= 7,
+    ).length;
 
-    const rawParsed =
-      parseJsonFromGemini(
-        rawResponse,
-      );
+    const totalCategories = categoryList.length;
 
-    const analysis =
-      normalizeGeminiResponse(
-        rawParsed,
-      );
+    const criticalIssues = analysis.issues.filter(
+      (issue) => issue.severity === 'critical',
+    ).length;
 
-    /**
-     * --------------------------------------------------------
-     * DETERMINISTIC SCORE
-     * --------------------------------------------------------
-     */
+    const warningIssues = analysis.issues.filter(
+      (issue) => issue.severity === 'warning',
+    ).length;
 
-    const scoring =
-      calculateATSScore(
-        analysis.categories,
-      );
-
-    /**
-     * --------------------------------------------------------
-     * RESUME FACTS
-     * --------------------------------------------------------
-     */
-
-    const facts =
-      getResumeFacts(
-        resumeData,
-      );
-
-    /**
-     * --------------------------------------------------------
-     * PASSED CHECKS
-     * --------------------------------------------------------
-     */
-
-    const categoryList =
-      buildCategoryUI(
-        analysis.categories,
-      );
-
-    const passedCategories =
-      categoryList.filter(
-        (category) =>
-          category.score >= 7,
-      ).length;
-
-    const totalCategories =
-      categoryList.length;
-
-    /**
-     * --------------------------------------------------------
-     * ISSUE COUNTS
-     * --------------------------------------------------------
-     */
-
-    const criticalIssues =
-      analysis.issues.filter(
-        (issue) =>
-          issue.severity ===
-          'critical',
-      ).length;
-
-    const warningIssues =
-      analysis.issues.filter(
-        (issue) =>
-          issue.severity ===
-          'warning',
-      ).length;
-
-    /**
-     * --------------------------------------------------------
-     * SCORE VERDICT
-     * --------------------------------------------------------
-     */
-
-    let verdict =
-      'Needs improvement';
+    let verdict = 'Needs improvement';
 
     if (scoring.score >= 85) {
-      verdict =
-        'Strong ATS readiness';
+      verdict = 'Strong ATS readiness';
     } else if (scoring.score >= 70) {
-      verdict =
-        'Good ATS readiness';
+      verdict = 'Good ATS readiness';
     } else if (scoring.score >= 50) {
-      verdict =
-        'Moderate ATS readiness';
+      verdict = 'Moderate ATS readiness';
     }
 
-    /**
-     * --------------------------------------------------------
-     * RESPONSE
-     * --------------------------------------------------------
-     *
-     * This response intentionally includes both:
-     *
-     * - new clean fields
-     * - useful fields your existing UI can consume
-     *
-     * The frontend should display currentScore rather than
-     * asking Gemini for a score.
-     */
-
     const response = {
-  success: true,
+      success: true,
+      analysisSource: 'gemini',
 
-  analysisSource: 'gemini',
+      // Final score calculated by TypeScript.
+      finalScore: scoring.score,
+      currentScore: scoring.score,
+      score: scoring.score,
+      maxScore: 100,
+      verdict,
 
-  // ============================================================
-  // FINAL ATS SCORE
-  // ============================================================
-  // This is calculated by TypeScript.
-  // Gemini NEVER directly determines this value.
-  finalScore: scoring.score,
+      // Transparent breakdown.
+      scoreBreakdown: scoring.breakdown,
 
-  // Backward-compatible aliases
-  currentScore: scoring.score,
-  score: scoring.score,
-  maxScore: 100,
+      // Exactly 8 categories.
+      categories: analysis.categories,
+      categoryList,
+      categoryCount: totalCategories,
+      passedChecks: passedCategories,
+      totalChecks: totalCategories,
 
-  verdict,
+      // Issues.
+      issues: analysis.issues,
+      issueSummary: {
+        critical: criticalIssues,
+        warnings: warningIssues,
+        total: analysis.issues.length,
+      },
 
-  // ============================================================
-  // TRANSPARENT SCORE BREAKDOWN
-  // ============================================================
-  scoreBreakdown: scoring.breakdown,
+      // JD analysis.
+      jdMatch: analysis.jdMatch,
+      missingKeywords: analysis.jdMatch.available
+        ? analysis.jdMatch.missingKeywords
+        : [],
+      matchedKeywords: analysis.jdMatch.available
+        ? analysis.jdMatch.matchedKeywords
+        : [],
+      missingSkills: analysis.jdMatch.available
+        ? analysis.jdMatch.missingSkills
+        : [],
+      matchedSkills: analysis.jdMatch.available
+        ? analysis.jdMatch.matchedSkills
+        : [],
+      recommendedKeywords: analysis.jdMatch.available
+        ? analysis.jdMatch.recommendedKeywords
+        : [],
+      priorityProjects: analysis.jdMatch.available
+        ? analysis.jdMatch.priorityProjects
+        : [],
 
-  // ============================================================
-  // 8 ATS CATEGORIES
-  // ============================================================
-  // Object format for ATSAnalysisPage.tsx
-  categories: analysis.categories,
+      // Deterministic resume facts.
+      resumeFacts: facts,
 
-  // Array format for UI components that prefer .map()
-  categoryList,
+      // AI-generated short summary.
+      summary: analysis.summary,
+    };
 
-  categoryCount: totalCategories,
-
-  passedChecks: passedCategories,
-
-  totalChecks: totalCategories,
-
-  // ============================================================
-  // ISSUES
-  // ============================================================
-  issues: analysis.issues,
-
-  issueSummary: {
-    critical: criticalIssues,
-    warnings: warningIssues,
-    total: analysis.issues.length,
-  },
-
-  // ============================================================
-  // JD MATCH
-  // ============================================================
-  // Completely separate from the main ATS score.
-  jdMatch: analysis.jdMatch,
-
-  missingKeywords: analysis.jdMatch.available
-    ? analysis.jdMatch.missingKeywords
-    : [],
-
-  matchedKeywords: analysis.jdMatch.available
-    ? analysis.jdMatch.matchedKeywords
-    : [],
-
-  missingSkills: analysis.jdMatch.available
-    ? analysis.jdMatch.missingSkills
-    : [],
-
-  matchedSkills: analysis.jdMatch.available
-    ? analysis.jdMatch.matchedSkills
-    : [],
-
-  // ============================================================
-  // DETERMINISTIC RESUME FACTS
-  // ============================================================
-  resumeFacts: facts,
-
-  // ============================================================
-  // AI SUMMARY
-  // ============================================================
-  summary: analysis.summary,
-};
-
-}
-catch (error) {
-    console.error(
-      'analyze-resume error:',
-      error,
+    return new Response(
+      JSON.stringify(response),
+      {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+      },
     );
+  } catch (error) {
+    console.error('analyze-resume error:', error);
 
     const message =
       error instanceof Error
         ? error.message
         : 'Unknown error';
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: message,
-      }),
-      {
-        status: 500,
-
-        headers: {
-          ...corsHeaders,
-          'Content-Type':
-            'application/json',
-        },
-      },
-    );
+    return errorResponse(message, 500);
   }
-);
+});

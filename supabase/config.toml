@@ -1,0 +1,48 @@
+# Supabase project configuration.
+#
+# `verify_jwt = false` is required for every Edge Function below because
+# each function already manages its own CORS headers and its own explicit
+# `OPTIONS` handler (see the top of each function's index.ts). Without this
+# file, Supabase defaults every function to `verify_jwt = true`, and the
+# platform gateway rejects any request that lacks a valid Authorization
+# header — including the browser's automatic CORS preflight (OPTIONS)
+# request, which never carries custom headers. That preflight rejection is
+# what the browser reports as a CORS failure ("Response to preflight
+# request doesn't pass access control check: It does not have HTTP ok
+# status"), even though each function's own code returns correct CORS
+# headers — the gateway never lets the request reach that code.
+#
+# If a function is later changed to require an authenticated user, remove
+# its entry below and instead verify the caller's identity explicitly
+# inside that function (e.g. via supabase.auth.getUser(token)), since
+# disabling verify_jwt means Supabase itself performs no auth check.
+
+[functions.analyze-resume]
+verify_jwt = false
+
+[functions.ai-helper]
+verify_jwt = false
+
+[functions.chat]
+verify_jwt = false
+
+[functions.experience-bullets]
+verify_jwt = false
+
+[functions.github-import-projects]
+verify_jwt = false
+
+[functions.github-import-skills]
+verify_jwt = false
+
+[functions.jd-match]
+verify_jwt = false
+
+[functions.skills]
+verify_jwt = false
+
+[functions.summary]
+verify_jwt = false
+
+[functions.tailor-resume]
+verify_jwt = false

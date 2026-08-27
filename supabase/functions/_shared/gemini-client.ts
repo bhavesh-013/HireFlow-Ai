@@ -4,7 +4,7 @@
  * Centralized Google Gemini API helper for all backend Edge Functions.
  */
 
-export const GEMINI_MODEL = 'gemini-2.0-flash';
+export const GEMINI_MODEL = 'gemini-3.6-flash';
 export const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export interface GeminiRequestOptions {

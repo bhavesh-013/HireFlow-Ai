@@ -9,53 +9,22 @@ import {
   Info,
   Sparkles,
   ArrowRight,
-  RefreshCw,
   UploadCloud,
   FileText,
-  Check,
   X,
-  ChevronDown,
-  ChevronUp,
-  Wand2,
-  Plus,
-  Sliders,
-  Award,
-  Lock,
   Target,
-  Zap,
-  BarChart3,
-  Building2,
   ArrowUpRight,
-  Code,
-  CheckCheck,
   Loader2,
   Clock,
-  Search,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-  SlidersHorizontal,
   Layers,
-  Sparkle,
-  Star,
-  Eye,
   FileCode,
-  Flame,
   CheckCircle,
   TrendingUp,
   Cpu,
   ArrowLeftRight,
   BookOpen,
-  Link2,
-  Github,
-  Linkedin,
-  Activity,
   AlignLeft,
-  Hash,
-  Calendar,
   UserCheck,
-  Trophy,
-  Globe,
   Layout,
   BriefcaseBusiness
 } from 'lucide-react';
@@ -196,8 +165,6 @@ export default function ATSAnalysisPage() {
   const [atsReport, setAtsReport] = useState<BackendATSReport | null>(null);
   const [atsScore, setAtsScore] = useState(0);
   const [atsError, setAtsError] = useState<string | null>(null);
-  const [previewTab, setPreviewTab] = useState<'preview' | 'compare'>('preview');
-  const [previewZoom, setPreviewZoom] = useState(100);
 
   // Bottom CTA AI Generation Flow State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -209,19 +176,9 @@ export default function ATSAnalysisPage() {
   const [missingKeywords, setMissingKeywords] = useState<
     Array<{ name: string; frequency: number; boost: number; added: boolean }>
   >([]);
-  const [keywordFilter, setKeywordFilter] = useState('');
-
   const [jdAnalysis, setJdAnalysis] = useState<JDAnalysis | null>(null);
   const [aiImprovements, setAiImprovements] = useState<ImprovementSuggestion[]>([]);
   const [sectionReorder, setSectionReorder] = useState<SectionOrderRecommendation | null>(null);
-  const [openKeywordCategories, setOpenKeywordCategories] = useState<Record<string, boolean>>({});
-  const [openImprovementsPanel, setOpenImprovementsPanel] = useState(true);
-
-  const [openInsights, setOpenInsights] = useState<{ [key: string]: boolean }>({
-    good: true,
-    improvements: true,
-    issues: true,
-  });
 
   const [categories, setCategories] = useState<Array<{
     id: string;
@@ -374,7 +331,7 @@ export default function ATSAnalysisPage() {
     setSectionReorder(getRecommendedSectionOrder(resumeData));
   };
 
-  const runAnalysis = useCallback(async (resumeData: ParsedResumeData, jd?: string) => {
+  const runAnalysis = useCallback(async (resumeData: ParsedResumeData, jd?: string, logActivity: boolean = false) => {
     setIsScanning(true);
     setAtsError(null);
 
@@ -414,9 +371,17 @@ export default function ATSAnalysisPage() {
       if (resumeData.id) {
         try {
           const { updateResume } = await import('../services/supabaseService');
-          const { activity: activityApi } = await import('../lib/api');
           await updateResume(resumeData.id, { ats_score: finalScore });
-          await activityApi.log('ATS_ANALYZED', resumeData.id, `Completed ATS analysis (Score: ${finalScore}/100)`);
+          // Only record a permanent Recent Activity entry for analyses the
+          // user explicitly asked for (upload, Run Scan, Optimize Resume).
+          // Silent background re-scores — after adding one keyword, applying
+          // a single AI suggestion, or just landing on this page — must not
+          // write to history, or every visit/edit floods the activity feed
+          // with a fresh "Completed ATS analysis" entry.
+          if (logActivity) {
+            const { activity: activityApi } = await import('../lib/api');
+            await activityApi.log('ATS_ANALYZED', resumeData.id, `Completed ATS analysis (Score: ${finalScore}/100)`);
+          }
         } catch (saveErr) {
           console.warn('[ATSAnalysisPage] Could not update ats_score on backend:', saveErr);
         }
@@ -465,7 +430,10 @@ export default function ATSAnalysisPage() {
   // State tracking whether user has loaded/uploaded a resume
   const [hasResumeData, setHasResumeData] = useState(false);
 
-  // Run on mount: check if location.state or localStorage has an explicitly imported/uploaded resume
+  // Run on mount: check if location.state or localStorage has an explicitly
+  // imported/uploaded resume, falling back to the user's most recently
+  // saved resume from the backend (e.g. when arriving via the sidebar
+  // rather than "View Full Detailed ATS Report" from the editor).
   useEffect(() => {
     const locState = location.state as any;
     if (locState?.importedResume || locState?.parsedResume) {
@@ -494,8 +462,56 @@ export default function ATSAnalysisPage() {
       }
     } catch {}
 
-    // No user resume uploaded yet — show ONLY the clean upload dropzone (hasResumeData = false)
-    setHasResumeData(false);
+    // Nothing in this browser session yet — fall back to the user's most
+    // recently saved resume on the backend before giving up and showing
+    // the upload dropzone.
+    (async () => {
+      try {
+        if (!isAuthenticated()) {
+          setHasResumeData(false);
+          return;
+        }
+        const { getLatestResume } = await import('../services/supabaseService');
+        const { fromBackendResume } = await import('../lib/resumeMapping');
+        const doc = await getLatestResume();
+        if (!doc) {
+          setHasResumeData(false);
+          return;
+        }
+        const mapped = fromBackendResume(doc);
+        const resume: ParsedResumeData = {
+          id: doc.id,
+          title: mapped.docTitle,
+          targetRole: mapped.targetRole,
+          personalInfo: mapped.personalInfo,
+          experiences: mapped.experiences,
+          education: mapped.education,
+          skills: mapped.skills,
+          projects: mapped.projects,
+          certificates: mapped.certificates,
+          achievements: mapped.achievements,
+          resumeType: mapped.resumeType,
+          templateName: mapped.selectedTemplate,
+          resumeStyling: mapped.resumeStyling,
+        };
+
+        if (!resume.personalInfo?.fullName && !resume.skills && !resume.experiences?.length) {
+          setHasResumeData(false);
+          return;
+        }
+
+        setPreviewData(resume);
+        if (resume.title) setCurrentResumeName(resume.title);
+        try {
+          localStorage.setItem('hireflow_current_resume', JSON.stringify(resume));
+        } catch {}
+        setHasResumeData(true);
+        runAnalysis(resume);
+      } catch (err) {
+        console.warn('[ATSAnalysisPage] Could not load latest resume from backend:', err);
+        setHasResumeData(false);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -556,7 +572,7 @@ export default function ATSAnalysisPage() {
       setHasResumeData(true);
 
       const jd = analysisMode === 'jd' ? jobDescription : undefined;
-      const report = await runAnalysis(parsed, jd);
+      const report = await runAnalysis(parsed, jd, true);
 
       if (report) {
         showToast(`ATS analysis complete — ${ATS_CRITERIA.length} criteria evaluated.`);
@@ -596,10 +612,6 @@ export default function ATSAnalysisPage() {
     if (file) {
       handleFileUpload(file);
     }
-  };
-
-  const handleToggleInsight = (key: string) => {
-    setOpenInsights((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   // Add a keyword only after explicit user confirmation. The score is
@@ -660,7 +672,7 @@ export default function ATSAnalysisPage() {
     }
 
     const jd = analysisMode === 'jd' ? jobDescription : undefined;
-    const report = await runAnalysis(previewData, jd);
+    const report = await runAnalysis(previewData, jd, true);
 
     if (report) {
       showToast(
@@ -793,7 +805,7 @@ export default function ATSAnalysisPage() {
         setGenerationProgress(100);
         setGenerationStepText('Optimization complete — recalculating ATS score...');
 
-        const report = await runAnalysis(updatedResume, jd);
+        const report = await runAnalysis(updatedResume, jd, true);
 
         if (report) {
           setIsGeneratedSuccess(true);
@@ -875,11 +887,6 @@ export default function ATSAnalysisPage() {
 
     navigate('/app/editor', { state: payload });
   };
-
-  // Filtered Missing Keywords
-  const filteredKeywords = missingKeywords.filter((k) =>
-    k.name.toLowerCase().includes(keywordFilter.toLowerCase())
-  );
 
   return (
     <div className="max-w-[1500px] mx-auto space-y-8 animate-in fade-in duration-300 pb-28 text-[#0B192C] font-sans">
@@ -1079,6 +1086,24 @@ export default function ATSAnalysisPage() {
           </div>
         </div>
 
+        {/* Analysis Failure Banner — surfaces a failed backend call instead of
+            silently rendering a fake 0/100 report via the ?? 0 fallbacks below */}
+        {atsError && !isScanning && (
+          <div className="relative z-10 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <AlertCircle size={18} className="text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-red-900">ATS analysis failed</p>
+              <p className="text-xs text-red-700 mt-0.5 break-words">{atsError}</p>
+            </div>
+            <button
+              onClick={() => runAnalysis(previewData, analysisMode === 'jd' ? jobDescription : undefined)}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg cursor-pointer transition-colors shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Hero Metric Quick-Stats Bar */}
         {analysisMode === 'general' ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 pt-4 border-t border-slate-100 relative z-10 animate-in fade-in duration-200">
@@ -1117,7 +1142,7 @@ export default function ATSAnalysisPage() {
               </span>
               <span className="text-xs font-bold text-amber-800 flex items-center gap-1 mt-1">
                 <TrendingUp size={13} className="text-amber-500" />
-                +{atsReport?.topFixes[0]?.estimatedAtsGain ?? 0} pts
+                +{atsReport?.topFixes?.[0]?.estimatedAtsGain ?? 0} pts
               </span>
             </div>
 
@@ -1126,7 +1151,7 @@ export default function ATSAnalysisPage() {
                 MISSING KEYWORDS
               </span>
               <span className="text-xs font-bold text-slate-900 font-mono mt-1 block">
-                {atsReport?.missingKeywords.length ?? 0} detected
+                {atsReport?.missingKeywords?.length ?? 0} detected
               </span>
             </div>
 
@@ -1185,7 +1210,7 @@ export default function ATSAnalysisPage() {
               </span>
               <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 mt-1">
                 <TrendingUp size={13} className="text-emerald-600" />
-                +{liveOptimizationResult?.scoringBreakdown?.scoreDelta ?? (atsReport?.topFixes[0]?.estimatedAtsGain ?? 0)} pts
+                +{liveOptimizationResult?.scoringBreakdown?.scoreDelta ?? (atsReport?.topFixes?.[0]?.estimatedAtsGain ?? 0)} pts
               </span>
             </div>
 
@@ -1221,8 +1246,10 @@ export default function ATSAnalysisPage() {
           <span className="font-mono text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             01 &middot; ATS SCORE ENGINE
           </span>
-          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-mono font-bold rounded-md">
-            Live Audited
+          <span className={`px-2 py-0.5 border text-[10px] font-mono font-bold rounded-md ${
+            atsReport ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'
+          }`}>
+            {atsReport ? 'Live Audited' : atsError ? 'Audit Failed' : 'Awaiting Audit'}
           </span>
         </div>
 
@@ -1642,7 +1669,7 @@ export default function ATSAnalysisPage() {
               TOP ISSUES
             </span>
             <div className="text-4xl font-black text-slate-800 font-mono">
-              {atsReport?.topFixes.length ?? 0}
+              {atsReport?.topFixes?.length ?? 0}
             </div>
             <span className="text-xs text-slate-500 block">Prioritized Fixes</span>
           </div>
@@ -1803,24 +1830,3 @@ export default function ATSAnalysisPage() {
   );
 }
 
-// Helper component for Layout Icon
-function LayoutIcon(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect width="18" height="18" x="3" y="3" rx="2" />
-      <path d="M3 9h18" />
-      <path d="M9 21V9" />
-    </svg>
-  );
-}
