@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { authService } from './auth.service';
+import { extractSummaryText } from '../lib/resumeMapping';
 
 export interface ResumeDocument {
   id: string;
@@ -139,7 +140,7 @@ export async function createResume(payload: any): Promise<ResumeDocument> {
         // Insert normalized sections into resume_sections
         const sections = [
           { resume_id: resumeDoc.id, section_type: 'personal_info', section_order: 1, content: rd.personalInfo || {} },
-          { resume_id: resumeDoc.id, section_type: 'summary', section_order: 2, content: { summary: rd.summary || '' } },
+          { resume_id: resumeDoc.id, section_type: 'summary', section_order: 2, content: { summary: extractSummaryText(rd.summary) } },
           { resume_id: resumeDoc.id, section_type: 'experience', section_order: 3, content: { items: rd.experience || [] } },
           { resume_id: resumeDoc.id, section_type: 'education', section_order: 4, content: { items: rd.education || [] } },
           { resume_id: resumeDoc.id, section_type: 'projects', section_order: 5, content: { items: rd.projects || [] } },
@@ -245,7 +246,7 @@ export async function updateResume(id: string, payload: any): Promise<ResumeDocu
     // Upsert sections
     const sections = [
       { resume_id: id, section_type: 'personal_info', section_order: 1, content: rd.personalInfo || {} },
-      { resume_id: id, section_type: 'summary', section_order: 2, content: { summary: rd.summary || '' } },
+      { resume_id: id, section_type: 'summary', section_order: 2, content: { summary: extractSummaryText(rd.summary) } },
       { resume_id: id, section_type: 'experience', section_order: 3, content: { items: rd.experience || [] } },
       { resume_id: id, section_type: 'education', section_order: 4, content: { items: rd.education || [] } },
       { resume_id: id, section_type: 'projects', section_order: 5, content: { items: rd.projects || [] } },
@@ -348,7 +349,7 @@ export async function listResumes(): Promise<ResumeDocument[]> {
           if (sections && sections.length > 0) {
             sections.forEach((sec) => {
               if (sec.section_type === 'personal_info') resumeData.personalInfo = sec.content;
-              else if (sec.section_type === 'summary') resumeData.summary = sec.content?.summary || sec.content;
+              else if (sec.section_type === 'summary') resumeData.summary = extractSummaryText(sec.content);
               else if (sec.section_type === 'experience') resumeData.experience = sec.content?.items || sec.content;
               else if (sec.section_type === 'education') resumeData.education = sec.content?.items || sec.content;
               else if (sec.section_type === 'projects') resumeData.projects = sec.content?.items || sec.content;
@@ -407,7 +408,7 @@ export async function getResume(id: string): Promise<ResumeDocument | null> {
       if (sections && sections.length > 0) {
         sections.forEach((sec) => {
           if (sec.section_type === 'personal_info') resumeData.personalInfo = sec.content;
-          else if (sec.section_type === 'summary') resumeData.summary = sec.content?.summary || sec.content;
+          else if (sec.section_type === 'summary') resumeData.summary = extractSummaryText(sec.content);
           else if (sec.section_type === 'experience') resumeData.experience = sec.content?.items || sec.content;
           else if (sec.section_type === 'education') resumeData.education = sec.content?.items || sec.content;
           else if (sec.section_type === 'projects') resumeData.projects = sec.content?.items || sec.content;

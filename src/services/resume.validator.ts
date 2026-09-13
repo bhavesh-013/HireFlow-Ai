@@ -15,6 +15,7 @@
  *    guesses can be filtered out or shown as lower priority in the UI.
  */
 import type { ParsedResumeData } from '../types';
+import { extractSummaryText, normalizeBullets, normalizeSkills } from '../lib/resumeMapping';
 
 export type ValidationCategory =
   | 'grammar'
@@ -98,6 +99,7 @@ function nextId(prefix: string): string {
 }
 
 function findSpellingIssues(text: string, section: ValidationIssue['section'], itemId?: string): ValidationIssue[] {
+  if (typeof text !== 'string') return [];
   const issues: ValidationIssue[] = [];
   const wordRegex = /\b[a-zA-Z]+\b/g;
   let match: RegExpExecArray | null;
@@ -128,6 +130,7 @@ function findSpellingIssues(text: string, section: ValidationIssue['section'], i
 }
 
 function findGrammarIssues(text: string, section: ValidationIssue['section'], itemId?: string): ValidationIssue[] {
+  if (typeof text !== 'string') return [];
   const issues: ValidationIssue[] = [];
   const trimmed = text.trim();
   if (!trimmed) return issues;
@@ -169,6 +172,7 @@ function findGrammarIssues(text: string, section: ValidationIssue['section'], it
 }
 
 function findContentIssues(text: string, section: ValidationIssue['section'], itemId?: string): ValidationIssue[] {
+  if (typeof text !== 'string') return [];
   const issues: ValidationIssue[] = [];
   const trimmed = text.trim();
   if (!trimmed) return issues;
@@ -283,7 +287,8 @@ function findCompletenessIssues(resume: ParsedResumeData): ValidationIssue[] {
       });
     }
   }
-  if (!resume.skills || resume.skills.trim().length === 0) {
+  const skillsText = normalizeSkills(resume.skills);
+  if (!skillsText || skillsText.trim().length === 0) {
     issues.push({
       id: nextId('complete'),
       original: '',
@@ -308,17 +313,18 @@ export function validateResume(resume: ParsedResumeData): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   // Summary
-  if (resume.personalInfo?.summary) {
-    issues.push(...findGrammarIssues(resume.personalInfo.summary, 'summary'));
-    issues.push(...findSpellingIssues(resume.personalInfo.summary, 'summary'));
-    issues.push(...findContentIssues(resume.personalInfo.summary, 'summary'));
+  const summaryText = extractSummaryText(resume.personalInfo?.summary);
+  if (summaryText) {
+    issues.push(...findGrammarIssues(summaryText, 'summary'));
+    issues.push(...findSpellingIssues(summaryText, 'summary'));
+    issues.push(...findContentIssues(summaryText, 'summary'));
   }
 
   // Experience bullets
   const periodsForConsistency: Array<{ value: string; section: ValidationIssue['section']; itemId?: string }> = [];
   (resume.experiences || []).forEach((exp) => {
-    if (exp.period) periodsForConsistency.push({ value: exp.period, section: 'experience', itemId: exp.id });
-    (exp.bullets || []).forEach((bullet) => {
+    if (exp.period && typeof exp.period === 'string') periodsForConsistency.push({ value: exp.period, section: 'experience', itemId: exp.id });
+    normalizeBullets(exp.bullets).forEach((bullet) => {
       issues.push(...findGrammarIssues(bullet, 'experience', exp.id));
       issues.push(...findSpellingIssues(bullet, 'experience', exp.id));
       issues.push(...findContentIssues(bullet, 'experience', exp.id));
@@ -327,25 +333,26 @@ export function validateResume(resume: ParsedResumeData): ValidationIssue[] {
 
   // Education
   (resume.education || []).forEach((edu) => {
-    if (edu.period) periodsForConsistency.push({ value: edu.period, section: 'education', itemId: edu.id });
+    if (edu.period && typeof edu.period === 'string') periodsForConsistency.push({ value: edu.period, section: 'education', itemId: edu.id });
   });
 
   // Projects
   (resume.projects || []).forEach((proj) => {
-    (proj.bullets || []).forEach((bullet) => {
+    normalizeBullets(proj.bullets).forEach((bullet) => {
       issues.push(...findGrammarIssues(bullet, 'projects', proj.id));
       issues.push(...findSpellingIssues(bullet, 'projects', proj.id));
       issues.push(...findContentIssues(bullet, 'projects', proj.id));
     });
-    if (proj.description) {
+    if (proj.description && typeof proj.description === 'string') {
       issues.push(...findSpellingIssues(proj.description, 'projects', proj.id));
     }
   });
 
   // Skills — duplicate/near-duplicate detection (case-insensitive dupes only;
   // never flags a skill as "suspicious" just because we don't recognize it).
-  if (resume.skills) {
-    const list = resume.skills.split(',').map((s) => s.trim()).filter(Boolean);
+  const skillsText = normalizeSkills(resume.skills);
+  if (skillsText) {
+    const list = skillsText.split(',').map((s) => s.trim()).filter(Boolean);
     const lowerSeen = new Map<string, string>();
     list.forEach((skill) => {
       const lower = skill.toLowerCase();
@@ -363,7 +370,7 @@ export function validateResume(resume: ParsedResumeData): ValidationIssue[] {
         lowerSeen.set(lower, skill);
       }
     });
-    issues.push(...findSpellingIssues(resume.skills, 'skills'));
+    issues.push(...findSpellingIssues(skillsText, 'skills'));
   }
 
   // Date consistency, resume-wide
@@ -386,7 +393,7 @@ export function validateField(
   section: ValidationIssue['section'],
   itemId?: string
 ): ValidationIssue[] {
-  if (!text || text.trim().length < 4) return [];
+  if (typeof text !== 'string' || !text || text.trim().length < 4) return [];
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
   const issues: ValidationIssue[] = [];

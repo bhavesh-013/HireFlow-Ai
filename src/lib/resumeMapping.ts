@@ -31,6 +31,63 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
   return { firstName, lastName: rest.join(' ') };
 }
 
+export function extractSummaryText(value: any): string {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+  let current = value;
+  while (current && typeof current === 'object') {
+    if (typeof current.summary === 'string') return current.summary;
+    if (typeof current.content === 'string') return current.content;
+    if (typeof current.text === 'string') return current.text;
+    if (current.summary && typeof current.summary === 'object') {
+      current = current.summary;
+    } else if (current.content && typeof current.content === 'object') {
+      current = current.content;
+    } else {
+      break;
+    }
+  }
+  return '';
+}
+
+export function normalizeBullets(bullets: any): string[] {
+  if (!bullets) return [];
+  if (typeof bullets === 'string') {
+    return bullets.split('\n').map((b) => b.trim()).filter(Boolean);
+  }
+  if (!Array.isArray(bullets)) return [];
+  return bullets
+    .map((b) => {
+      if (typeof b === 'string') return b;
+      if (b && typeof b === 'object') {
+        if (typeof b.text === 'string') return b.text;
+        if (typeof b.content === 'string') return b.content;
+        if (typeof b.bullet === 'string') return b.bullet;
+      }
+      return '';
+    })
+    .filter(Boolean);
+}
+
+export function normalizeSkills(skills: any): string {
+  if (typeof skills === 'string') return skills;
+  if (Array.isArray(skills)) {
+    return skills
+      .map((s: any) => (typeof s === 'string' ? s : s?.name || ''))
+      .filter(Boolean)
+      .join(', ');
+  }
+  if (skills && typeof skills === 'object') {
+    if (Array.isArray(skills.items)) {
+      return skills.items
+        .map((s: any) => (typeof s === 'string' ? s : s?.name || ''))
+        .filter(Boolean)
+        .join(', ');
+    }
+  }
+  return '';
+}
+
 export interface EditorState {
   docTitle: string;
   targetRole: string;
@@ -55,6 +112,7 @@ export function toBackendPayload(state: EditorState) {
   const { firstName, lastName } = splitName(state.personalInfo.fullName);
   const atsScore = typeof state.atsScore === 'number' ? state.atsScore : null;
   const structureScore = typeof state.structureScore === 'number' ? state.structureScore : null;
+  const cleanSummary = extractSummaryText(state.personalInfo?.summary);
 
   return {
     title: state.docTitle || 'Untitled Resume',
@@ -74,7 +132,7 @@ export function toBackendPayload(state: EditorState) {
         linkedin: state.personalInfo.linkedin || '',
         github: state.personalInfo.github || '',
       },
-      summary: state.personalInfo.summary || '',
+      summary: cleanSummary,
       experience: state.experiences.map((exp) => ({
         id: exp.id,
         company: exp.company,
@@ -165,6 +223,11 @@ export function fromBackendResume(doc: any): EditorState {
       ? meta.structureScore
       : null;
 
+  const cleanSummary =
+    extractSummaryText(personalInfo.summary) ||
+    extractSummaryText(rd.summary) ||
+    '';
+
   return {
     docTitle: doc?.title || 'Untitled Resume',
     targetRole: personalInfo.jobTitle || '',
@@ -172,46 +235,46 @@ export function fromBackendResume(doc: any): EditorState {
     structureScore,
     personalInfo: {
       fullName: [personalInfo.firstName, personalInfo.lastName].filter(Boolean).join(' '),
-      jobTitle: personalInfo.jobTitle || '',
-      email: personalInfo.email || '',
-      phone: personalInfo.phone || '',
-      location: personalInfo.location || '',
-      website: personalInfo.website || '',
-      github: personalInfo.github || '',
-      linkedin: personalInfo.linkedin || '',
-      summary: rd.summary || '',
+      jobTitle: typeof personalInfo.jobTitle === 'string' ? personalInfo.jobTitle : '',
+      email: typeof personalInfo.email === 'string' ? personalInfo.email : '',
+      phone: typeof personalInfo.phone === 'string' ? personalInfo.phone : '',
+      location: typeof personalInfo.location === 'string' ? personalInfo.location : '',
+      website: typeof personalInfo.website === 'string' ? personalInfo.website : '',
+      github: typeof personalInfo.github === 'string' ? personalInfo.github : '',
+      linkedin: typeof personalInfo.linkedin === 'string' ? personalInfo.linkedin : '',
+      summary: cleanSummary,
     },
     experiences: (rd.experience || []).map((exp: any) => ({
-      id: exp.id,
-      title: exp.position || '',
+      id: exp.id || `exp_${Math.random().toString(36).substring(2, 9)}`,
+      title: exp.position || exp.title || '',
       company: exp.company || '',
-      period: joinPeriod(exp.startDate, exp.endDate),
+      period: joinPeriod(exp.startDate, exp.endDate) || exp.period || '',
       location: exp.location || '',
-      bullets: exp.bullets || [],
+      bullets: normalizeBullets(exp.bullets),
     })),
     education: (rd.education || []).map((edu: any) => ({
-      id: edu.id,
+      id: edu.id || `edu_${Math.random().toString(36).substring(2, 9)}`,
       degree: edu.degree || '',
       institution: edu.institution || '',
-      period: joinPeriod(edu.startDate, edu.endDate),
+      period: joinPeriod(edu.startDate, edu.endDate) || edu.period || '',
       location: edu.location || '',
       gpa: edu.gpa || '',
       currentSem: edu.currentSem || '',
-      highlights: (edu.bullets || [])[0] || '',
+      highlights: (edu.bullets || [])[0] || edu.highlights || '',
     })),
-    skills: typeof rd.skills === 'string'
-      ? rd.skills
-      : Array.isArray(rd.skills)
-      ? rd.skills.map((s: any) => (typeof s === 'string' ? s : s?.name || '')).filter(Boolean).join(', ')
-      : '',
+    skills: normalizeSkills(rd.skills),
     projects: (rd.projects || []).map((proj: any) => ({
-      id: proj.id,
-      title: proj.name || '',
-      description: proj.description || '',
-      techStack: proj.technologies || [],
+      id: proj.id || `proj_${Math.random().toString(36).substring(2, 9)}`,
+      title: proj.name || proj.title || '',
+      description: typeof proj.description === 'string' ? proj.description : '',
+      techStack: Array.isArray(proj.technologies)
+        ? proj.technologies
+        : Array.isArray(proj.techStack)
+        ? proj.techStack
+        : [],
       link: proj.link || '',
-      demoUrl: proj.liveUrl || '',
-      bullets: proj.bullets || [],
+      demoUrl: proj.liveUrl || proj.demoUrl || '',
+      bullets: normalizeBullets(proj.bullets),
     })),
     certificates: (rd.certifications || []).map((cert: any) => ({
       id: cert.id,
