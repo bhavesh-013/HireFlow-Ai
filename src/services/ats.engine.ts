@@ -23,6 +23,7 @@ import type {
   ResumeType,
 } from '../types';
 import rulesConfig from '../data/atsRules.json';
+import { extractSummaryText, normalizeBullets, normalizeSkills } from '../lib/resumeMapping';
 
 // ─── Term Normalization Engine ────────────────────────────────────────────────
 
@@ -114,43 +115,45 @@ function getResumeText(r: ParsedResumeData): string {
 
   if (r.personalInfo) {
     const pi = r.personalInfo;
-    if (pi.fullName) parts.push(pi.fullName);
-    if (pi.jobTitle) parts.push(pi.jobTitle);
-    if (pi.summary) parts.push(pi.summary);
+    if (typeof pi.fullName === 'string') parts.push(pi.fullName);
+    if (typeof pi.jobTitle === 'string') parts.push(pi.jobTitle);
+    const sum = extractSummaryText(pi.summary);
+    if (sum) parts.push(sum);
   }
 
   if (r.experiences?.length) {
     r.experiences.forEach((e) => {
-      parts.push(e.title || '');
-      parts.push(e.company || '');
-      parts.push(e.period || '');
-      (e.bullets || []).forEach((b) => parts.push(b));
+      parts.push(typeof e.title === 'string' ? e.title : '');
+      parts.push(typeof e.company === 'string' ? e.company : '');
+      parts.push(typeof e.period === 'string' ? e.period : '');
+      normalizeBullets(e.bullets).forEach((b) => parts.push(b));
     });
   }
 
   if (r.education?.length) {
     r.education.forEach((ed) => {
-      parts.push(ed.degree || '');
-      parts.push(ed.institution || '');
-      parts.push(ed.period || '');
+      parts.push(typeof ed.degree === 'string' ? ed.degree : '');
+      parts.push(typeof ed.institution === 'string' ? ed.institution : '');
+      parts.push(typeof ed.period === 'string' ? ed.period : '');
     });
   }
 
-  if (r.skills) parts.push(r.skills);
+  const sk = normalizeSkills(r.skills);
+  if (sk) parts.push(sk);
 
   if (r.projects?.length) {
     r.projects.forEach((p) => {
-      parts.push(p.title || '');
-      parts.push(p.description || '');
-      (p.bullets || []).forEach((b) => parts.push(b));
-      (p.techStack || []).forEach((t) => parts.push(t));
+      parts.push(typeof p.title === 'string' ? p.title : '');
+      parts.push(typeof p.description === 'string' ? p.description : '');
+      normalizeBullets(p.bullets).forEach((b) => parts.push(b));
+      (p.techStack || []).forEach((t) => parts.push(typeof t === 'string' ? t : ''));
     });
   }
 
   if (r.certificates?.length) {
     r.certificates.forEach((c) => {
-      parts.push(c.title || '');
-      parts.push(c.issuer || '');
+      parts.push(typeof c.title === 'string' ? c.title : '');
+      parts.push(typeof c.issuer === 'string' ? c.issuer : '');
     });
   }
 
@@ -159,8 +162,8 @@ function getResumeText(r: ParsedResumeData): string {
 
 function getAllBullets(r: ParsedResumeData): string[] {
   const bullets: string[] = [];
-  (r.experiences || []).forEach((e) => bullets.push(...(e.bullets || [])));
-  (r.projects || []).forEach((p) => bullets.push(...(p.bullets || [])));
+  (r.experiences || []).forEach((e) => bullets.push(...normalizeBullets(e.bullets)));
+  (r.projects || []).forEach((p) => bullets.push(...normalizeBullets(p.bullets)));
   return bullets;
 }
 
@@ -194,29 +197,32 @@ function evalContactRules(r: ParsedResumeData): ATSRuleResult[] {
   const rules: ATSRuleResult[] = [];
 
   // Name check (2 pts)
-  const hasName = Boolean(pi.fullName && pi.fullName.trim().length >= 2);
+  const fullName = typeof pi.fullName === 'string' ? pi.fullName : '';
+  const hasName = Boolean(fullName && fullName.trim().length >= 2);
   rules.push(createRuleResult(
     'contact_name', 'Contact Information', 'critical', hasName,
     hasName ? 2 : 0, 2,
-    hasName ? `Full name detected: "${pi.fullName}"` : 'Full name is missing in header.',
+    hasName ? `Full name detected: "${fullName}"` : 'Full name is missing in header.',
     hasName ? null : 'Include your full legal or professional name at the top of your resume.'
   ));
 
   // Email check (2 pts)
-  const hasEmail = Boolean(pi.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pi.email.trim()));
+  const email = typeof pi.email === 'string' ? pi.email : '';
+  const hasEmail = Boolean(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
   rules.push(createRuleResult(
     'contact_email', 'Contact Information', 'critical', hasEmail,
     hasEmail ? 2 : 0, 2,
-    hasEmail ? `Professional email address detected: "${pi.email}"` : 'No valid email address detected.',
+    hasEmail ? `Professional email address detected: "${email}"` : 'No valid email address detected.',
     hasEmail ? null : 'Add a clean, professional email address (e.g. name@domain.com).'
   ));
 
   // Phone check (2 pts)
-  const hasPhone = Boolean(pi.phone && pi.phone.trim().length >= 7);
+  const phone = typeof pi.phone === 'string' ? pi.phone : '';
+  const hasPhone = Boolean(phone && phone.trim().length >= 7);
   rules.push(createRuleResult(
     'contact_phone', 'Contact Information', 'high', hasPhone,
     hasPhone ? 2 : 0, 2,
-    hasPhone ? `Phone number detected: "${pi.phone}"` : 'Phone number is missing.',
+    hasPhone ? `Phone number detected: "${phone}"` : 'Phone number is missing.',
     hasPhone ? null : 'Add a primary phone number with country/area code.'
   ));
 
@@ -250,10 +256,12 @@ function evalStructureRules(r: ParsedResumeData, resumeType: ResumeType): ATSRul
   const textLower = getResumeText(r).toLowerCase();
 
   // Section presence check (5 pts)
-  const hasSummary = Boolean(r.personalInfo?.summary && r.personalInfo.summary.trim().length >= 10);
+  const summaryText = extractSummaryText(r.personalInfo?.summary);
+  const hasSummary = Boolean(summaryText && summaryText.trim().length >= 10);
   const hasExp = Boolean(r.experiences?.length && r.experiences.length > 0);
   const hasEdu = Boolean(r.education?.length && r.education.length > 0);
-  const hasSkills = Boolean(r.skills && r.skills.trim().length >= 5);
+  const skillsText = normalizeSkills(r.skills);
+  const hasSkills = Boolean(skillsText && skillsText.trim().length >= 5);
   const hasProj = Boolean(r.projects?.length && r.projects.length > 0);
 
   let structScore = 0;

@@ -38,6 +38,8 @@ import { analyzeJobDescription, type JDAnalysis } from '../services/jd.analyzer'
 import { generateImprovements, applyImprovement, type ImprovementSuggestion } from '../services/ai.improvement';
 import { getRecommendedSectionOrder, type SectionOrderRecommendation } from '../services/section.reorder';
 import { validateResume, type ValidationIssue } from '../services/resume.validator';
+import { extractSummaryText, normalizeBullets, normalizeSkills } from '../lib/resumeMapping';
+import { analyzeResume as analyzeResumeDeterministic } from '../services/ats.engine';
 import JobDescriptionInput from '../components/ats/JobDescriptionInput';
 import AnalysisProgressBar from '../components/ats/AnalysisProgressBar';
 import AtsScoreComparisonCard from '../components/ats/AtsScoreComparisonCard';
@@ -336,28 +338,88 @@ export default function ATSAnalysisPage() {
     setAtsError(null);
 
     try {
-      const { supabase, isSupabaseConfigured } = await import('../services/supabaseClient');
-
-      if (!isSupabaseConfigured()) {
-        throw new Error('ATS analysis service is not configured.');
-      }
-
-      const { data, error } = await supabase.functions.invoke('analyze-resume', {
-        body: {
-          resumeData,
-          targetJobDescription: jd?.trim() || null,
+      const sanitizedResume: ParsedResumeData = {
+        ...resumeData,
+        personalInfo: {
+          ...(resumeData.personalInfo || {}),
+          fullName: resumeData.personalInfo?.fullName || '',
+          jobTitle: resumeData.personalInfo?.jobTitle || '',
+          email: resumeData.personalInfo?.email || '',
+          phone: resumeData.personalInfo?.phone || '',
+          location: resumeData.personalInfo?.location || '',
+          summary: extractSummaryText(resumeData.personalInfo?.summary),
         },
-      });
+        skills: normalizeSkills(resumeData.skills),
+        experiences: (resumeData.experiences || []).map((exp) => ({
+          ...exp,
+          bullets: normalizeBullets(exp.bullets),
+        })),
+        projects: (resumeData.projects || []).map((proj) => ({
+          ...proj,
+          bullets: normalizeBullets(proj.bullets),
+        })),
+      };
 
-      if (error) throw error;
-      if (!data?.success && typeof data?.finalScore !== 'number') {
-        throw new Error(data?.error || 'ATS analysis failed.');
-      }
-      if (typeof data.finalScore !== 'number') {
-        throw new Error('Invalid ATS response: finalScore is missing.');
+      let report: BackendATSReport | null = null;
+
+      try {
+        const { supabase, isSupabaseConfigured } = await import('../services/supabaseClient');
+        if (isSupabaseConfigured()) {
+          const { data, error } = await supabase.functions.invoke('analyze-resume', {
+            body: {
+              resumeData: sanitizedResume,
+              targetJobDescription: jd?.trim() || null,
+            },
+          });
+
+          if (!error && data && (data.success || typeof data.finalScore === 'number')) {
+            report = data as BackendATSReport;
+          } else if (error) {
+            console.warn('[ATSAnalysisPage] analyze-resume edge function warning:', error);
+          }
+        }
+      } catch (edgeErr) {
+        console.warn('[ATSAnalysisPage] analyze-resume edge function error, falling back to deterministic engine:', edgeErr);
       }
 
-      const report = data as BackendATSReport;
+      // If backend edge function failed (e.g. rate-limit/quota 429) or is not configured,
+      // fall back smoothly to our deterministic client-side ATS engine
+      if (!report || typeof report.finalScore !== 'number') {
+        const fullReport = analyzeResumeDeterministic(sanitizedResume, {
+          jobDescription: jd?.trim() || undefined,
+        });
+
+        report = {
+          success: true,
+          finalScore: fullReport.finalScore,
+          categories: fullReport.categories as any,
+          topFixes: (fullReport.topFixes || []).map((f) => ({
+            key: f.key,
+            label: f.label,
+            score: f.score,
+            priority: f.priority,
+            reason: f.reason,
+            fixSuggestion: f.fixSuggestion,
+            estimatedAtsGain: f.estimatedAtsGain,
+          })),
+          missingKeywords: (fullReport.missingKeywords || []).map((k) => ({
+            keyword: k.keyword,
+            frequency: k.frequency,
+            estimatedGain: k.estimatedGain,
+          })),
+          jdMatch: fullReport.jdMatchBreakdown
+            ? {
+                enabled: true,
+                score: fullReport.jdMatchBreakdown.overallJdMatchScore,
+                matchedKeywords: [],
+                missingKeywords: (fullReport.missingKeywords || []).map((m) => m.keyword),
+                summary: `JD Match Score: ${fullReport.jdMatchBreakdown.overallJdMatchScore}%`,
+              }
+            : undefined,
+          summary: fullReport.scoreLabel,
+        };
+      }
+
       const finalScore = Math.round(Math.max(0, Math.min(100, report.finalScore)));
 
       if (initialAtsScoreRef.current === null) {
@@ -366,21 +428,15 @@ export default function ATSAnalysisPage() {
 
       setAtsReport(report);
       setAtsScore(finalScore);
-      mapBackendReport(report, resumeData, jd);
+      mapBackendReport(report, sanitizedResume, jd);
 
-      if (resumeData.id) {
+      if (sanitizedResume.id) {
         try {
           const { updateResume } = await import('../services/supabaseService');
-          await updateResume(resumeData.id, { ats_score: finalScore });
-          // Only record a permanent Recent Activity entry for analyses the
-          // user explicitly asked for (upload, Run Scan, Optimize Resume).
-          // Silent background re-scores — after adding one keyword, applying
-          // a single AI suggestion, or just landing on this page — must not
-          // write to history, or every visit/edit floods the activity feed
-          // with a fresh "Completed ATS analysis" entry.
+          await updateResume(sanitizedResume.id, { ats_score: finalScore });
           if (logActivity) {
             const { activity: activityApi } = await import('../lib/api');
-            await activityApi.log('ATS_ANALYZED', resumeData.id, `Completed ATS analysis (Score: ${finalScore}/100)`);
+            await activityApi.log('ATS_ANALYZED', sanitizedResume.id, `Completed ATS analysis (Score: ${finalScore}/100)`);
           }
         } catch (saveErr) {
           console.warn('[ATSAnalysisPage] Could not update ats_score on backend:', saveErr);
@@ -391,6 +447,7 @@ export default function ATSAnalysisPage() {
         const stored = localStorage.getItem('hireflow_current_resume');
         if (stored) {
           const parsed = JSON.parse(stored);
+          parsed.atsScore = finalScore;
           parsed.meta = { ...(parsed.meta || {}), atsScore: finalScore };
           localStorage.setItem('hireflow_current_resume', JSON.stringify(parsed));
         }
@@ -438,10 +495,15 @@ export default function ATSAnalysisPage() {
     const locState = location.state as any;
     if (locState?.importedResume || locState?.parsedResume) {
       const resume = locState.importedResume || locState.parsedResume;
+      const targetJd = locState.jobDescription || locState.targetJobDescription;
+      if (targetJd && typeof targetJd === 'string' && targetJd.trim().length > 0) {
+        setJobDescription(targetJd);
+        setAnalysisMode('jd');
+      }
       setPreviewData(resume);
       if (resume.title) setCurrentResumeName(resume.title);
       setHasResumeData(true);
-      runAnalysis(resume);
+      runAnalysis(resume, targetJd || undefined);
       return;
     }
 
@@ -453,10 +515,31 @@ export default function ATSAnalysisPage() {
           parsed &&
           (parsed.personalInfo?.fullName || parsed.skills || parsed.experiences?.length)
         ) {
-          setPreviewData(parsed);
-          if (parsed.title) setCurrentResumeName(parsed.title);
+          const sanitized: ParsedResumeData = {
+            ...parsed,
+            personalInfo: {
+              ...(parsed.personalInfo || {}),
+              fullName: parsed.personalInfo?.fullName || '',
+              jobTitle: parsed.personalInfo?.jobTitle || '',
+              email: parsed.personalInfo?.email || '',
+              phone: parsed.personalInfo?.phone || '',
+              location: parsed.personalInfo?.location || '',
+              summary: extractSummaryText(parsed.personalInfo?.summary),
+            },
+            skills: normalizeSkills(parsed.skills),
+            experiences: (parsed.experiences || []).map((exp: any) => ({
+              ...exp,
+              bullets: normalizeBullets(exp.bullets),
+            })),
+            projects: (parsed.projects || []).map((proj: any) => ({
+              ...proj,
+              bullets: normalizeBullets(proj.bullets),
+            })),
+          };
+          setPreviewData(sanitized);
+          if (sanitized.title) setCurrentResumeName(sanitized.title);
           setHasResumeData(true);
-          runAnalysis(parsed);
+          runAnalysis(sanitized);
           return;
         }
       }
