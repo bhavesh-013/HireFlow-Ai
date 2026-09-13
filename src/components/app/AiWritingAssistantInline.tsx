@@ -13,7 +13,15 @@ import {
   ChevronDown,
   CornerDownRight
 } from 'lucide-react';
-import { validateField, type ValidationIssue } from '../../services/resume.validator';
+interface ValidationIssue {
+  id?: string;
+  type?: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  suggestion?: string;
+  explanation?: string;
+}
+const validateField = (value: string, section: string, itemId?: string): ValidationIssue[] => [];
 import { aiService, type WritingAssistParams } from '../../services/ai.service';
 
 export interface AiWritingAssistantInlineProps {

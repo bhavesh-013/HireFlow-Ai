@@ -156,8 +156,7 @@ export const ai = {
   atsAnalyze: (resumeData: any, targetJobDescription?: string) =>
     aiService.atsAnalyze(resumeData, targetJobDescription),
 
-  jdMatch: (resumeData: any, jobDescription: string) =>
-    aiService.jdMatch(resumeData, jobDescription),
+
 
   suggest: (payload: any) =>
     aiService.rewriteSummary(payload.summary || payload.currentSkills || '', payload.targetRole, payload.mode),

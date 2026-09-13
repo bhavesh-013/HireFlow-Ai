@@ -12,7 +12,7 @@ import {
 } from '../types';
 import { githubService } from '../services/githubService';
 import { skillExtractor } from '../services/skillExtractor';
-import { aiSkillOptimizer } from '../services/aiSkillOptimizer';
+
 import { projectExtractor } from '../services/projectExtractor';
 import { mergeSkills, SkillMergeResult } from '../utils/skillMerger';
 
@@ -238,10 +238,7 @@ export function useGithubImport(options: UseGithubImportOptions = {}) {
         updateStep(5, 'Optimizing ATS keywords with AI...', 80);
         let optimizedSkills: ExtractedSkill[] = [];
         try {
-          optimizedSkills = await aiSkillOptimizer.optimizeSkillsWithAI(
-            aggregatedSkills,
-            options.targetJobDescription
-          );
+          optimizedSkills = aggregatedSkills;
         } catch (aiErr) {
           console.warn('AI Optimization step failed, continuing with raw skills:', aiErr);
           optimizedSkills = aggregatedSkills;

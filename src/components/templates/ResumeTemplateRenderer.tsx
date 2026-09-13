@@ -1,7 +1,8 @@
 import React from 'react';
 import type { TemplateLayoutConfig } from '../../services/templateConfig.service';
 import type { PreviewResumeData } from './previewData';
-import { FRESHER_ORDER, EXPERIENCED_ORDER } from '../../services/section.reorder';
+const FRESHER_ORDER = ['summary', 'education', 'skills', 'projects', 'certificates', 'achievements', 'experience'];
+const EXPERIENCED_ORDER = ['summary', 'experience', 'skills', 'projects', 'education', 'certificates', 'achievements'];
 
 export type TemplateVariant = 'ats-classic' | 'modern-professional' | 'technical' | 'minimal' | 'executive';
 

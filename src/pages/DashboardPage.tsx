@@ -31,7 +31,7 @@ import {
   deleteResume,
 } from '../services/supabaseService';
 import { rememberCurrentLocationForRedirect } from '../lib/authGate';
-import { analyzeResume } from '../services/ats.engine';
+
 
 function getPersistedAtsScore(doc: any): number | null {
   if (typeof doc.ats_score === 'number') return doc.ats_score;

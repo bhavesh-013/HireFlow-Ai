@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Save,
@@ -48,19 +48,8 @@ import {
   Layers,
   FolderPlus,
   Linkedin,
-  Wand2,
-  Target,
-  TrendingUp,
-  BookOpen,
-  ArrowRight,
+  Wand2
 } from 'lucide-react';
-import type { JdAnalysisResult } from '../services/jdAnalysis.types';
-import { analyzeJdMatchWithAI, generateTailoredResumeWithAI } from '../services/ai.service';
-import { parseResumeFile } from '../utils/fileParser';
-import { versionService } from '../services/version.service';
-import { atsService } from '../services/ats.service';
-import { isSupabaseConfigured } from '../services/supabaseClient';
-import { tailorService } from '../services/tailor.service';
 import { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } from '../utils/urlValidator';
 import { extractResumeMetrics, fixSummaryGrammar, improveSummaryAts } from '../utils/summaryAi';
 import { ai as aiApi, activity, ApiRequestError, isAuthenticated, getStoredUser } from '../lib/api';
@@ -73,7 +62,7 @@ import {
 } from '../services/supabaseService';
 import { rememberCurrentLocationForRedirect } from '../lib/authGate';
 import { authService } from '../services/auth.service';
-import { toBackendPayload, fromBackendResume, extractSummaryText, normalizeBullets, normalizeSkills } from '../lib/resumeMapping';
+import { toBackendPayload, fromBackendResume } from '../lib/resumeMapping';
 import {
   ParsedResumeData,
   ExperienceItem,
@@ -85,15 +74,29 @@ import {
   CustomSectionData,
   CustomSectionItem,
   ResumeType,
-  ATSFullReport
+  ATSResult
 } from '../types';
 import { GitHubImportModal } from '../components/app/GitHubImportModal';
 import { templatesConfigService } from '../services/templateConfig.service';
-import { getDefaultSectionItems, getDefaultCustomSections } from '../services/section.reorder';
+import { aiService } from '../services/ai.service';
+function getDefaultSectionItems(type: 'fresher' | 'experienced' | string): SectionNavItem[] {
+  return [
+    { id: 'summary', type: 'summary', title: 'Professional Summary', visible: true, order: 0 },
+    { id: 'experience', type: 'experience', title: 'Work Experience', visible: true, order: 1 },
+    { id: 'education', type: 'education', title: 'Education', visible: true, order: 2 },
+    { id: 'skills', type: 'skills', title: 'Skills', visible: true, order: 3 },
+    { id: 'projects', type: 'projects', title: 'Projects', visible: true, order: 4 },
+    { id: 'certificates', type: 'certificates', title: 'Certificates', visible: true, order: 5 },
+    { id: 'achievements', type: 'achievements', title: 'Achievements', visible: true, order: 6 },
+  ];
+}
+
+function getDefaultCustomSections(type: string): CustomSectionData[] {
+  return [];
+}
 import { normalizeProjects } from '../utils/resumeTextParser';
 import { AiWritingAssistantInline } from '../components/app/AiWritingAssistantInline';
 import { downloadDocxExport, generateSafeFilename } from '../services/export.service';
-import { atsEngine } from '../services/ats.engine';
 import FresherDocumentView from '../components/templates/FresherDocumentView';
 import ExperiencedDocumentView from '../components/templates/ExperiencedDocumentView';
 
@@ -194,7 +197,7 @@ export default function ResumeEditorPage() {
   const [isAtsPanelExpanded, setIsAtsPanelExpanded] = useState<boolean>(false);
 
   // Live ATS Engine State (Calculated 100% deterministically from active resume & JD)
-  const [atsReport, setAtsReport] = useState<ATSFullReport | null>(null);
+  const [atsReport, setAtsReport] = useState<ATSResult | null>(null);
   const [liveAtsScore, setLiveAtsScore] = useState<number | null>(null);
   const [isCalculatingAts, setIsCalculatingAts] = useState<boolean>(false);
   const [atsLastUpdatedText, setAtsLastUpdatedText] = useState<string>('Updated just now');
@@ -207,13 +210,15 @@ export default function ResumeEditorPage() {
   const [jdLinkedinUrl, setJdLinkedinUrl] = useState('');
   const [jdFile, setJdFile] = useState<File | null>(null);
   const [isAnalyzingJd, setIsAnalyzingJd] = useState(false);
-  const [isTailoringResume, setIsTailoringResume] = useState(false);
-  const [isParsingJdFile, setIsParsingJdFile] = useState(false);
   const [isTailorPanelExpanded, setIsTailorPanelExpanded] = useState(true);
-  const [jdAnalysisResult, setJdAnalysisResult] = useState<JdAnalysisResult | null>(null);
-  const [missingKeywordFilter, setMissingKeywordFilter] = useState<'all' | 'technicalSkills' | 'tools' | 'frameworks' | 'concepts' | 'domainKeywords'>('all');
-  const [showTailoredComparisonModal, setShowTailoredComparisonModal] = useState(false);
-  const [isSavingNewVersion, setIsSavingNewVersion] = useState(false);
+  const [jdAnalysisResult, setJdAnalysisResult] = useState<{
+    matchPercent: number;
+    missingKeywords: string[];
+    requiredSkills: string[];
+    recommendedSkills: string[];
+    missingMetrics: string[];
+    suggestions: string[];
+  } | null>(null);
 
   const [docTitle, setDocTitle] = useState(
     importedData?.title || 'Untitled Resume.pdf'
@@ -242,7 +247,7 @@ export default function ResumeEditorPage() {
     website: importedData?.personalInfo?.website || currentUser?.website || '',
     github: importedData?.personalInfo?.github || currentUser?.github || '',
     linkedin: importedData?.personalInfo?.linkedin || currentUser?.linkedin || '',
-    summary: extractSummaryText(importedData?.personalInfo?.summary),
+    summary: importedData?.personalInfo?.summary || '',
   });
 
   const [urlErrors, setUrlErrors] = useState<{
@@ -328,309 +333,67 @@ export default function ResumeEditorPage() {
   const displayExperiences = activeResumeMode === 'tailored' && tailoredResumeData ? tailoredResumeData.experiences : experiences;
   const displayEducation = activeResumeMode === 'tailored' && tailoredResumeData ? tailoredResumeData.education : education;
   const displaySkills = activeResumeMode === 'tailored' && tailoredResumeData ? (tailoredResumeData.skills || '') : skills;
-  const displayProjects = useMemo(() => normalizeProjects(
+  const displayProjects = normalizeProjects(
     activeResumeMode === 'tailored' && tailoredResumeData ? tailoredResumeData.projects : projects
-  ), [activeResumeMode, tailoredResumeData, projects]);
-  const displayCertificates = useMemo(() => (
-    activeResumeMode === 'tailored' && tailoredResumeData ? (tailoredResumeData.certificates || []) : certificates
-  ), [activeResumeMode, tailoredResumeData, certificates]);
-  const displayAchievements = useMemo(() => (
-    activeResumeMode === 'tailored' && tailoredResumeData ? (tailoredResumeData.achievements || []) : achievements
-  ), [activeResumeMode, tailoredResumeData, achievements]);
+  );
+  const displayCertificates = activeResumeMode === 'tailored' && tailoredResumeData ? (tailoredResumeData.certificates || []) : certificates;
+  const displayAchievements = activeResumeMode === 'tailored' && tailoredResumeData ? (tailoredResumeData.achievements || []) : achievements;
 
-  const currentResumeDataSnapshot = () =>
-    toBackendPayload({
-      docTitle,
-      targetRole,
-      personalInfo,
+  // Handlers for Tailored Resume Section
+  const handleAnalyzeJd = async () => {
+    const rawJd = jdText || (jdFile ? jdFile.name : '') || jdLinkedinUrl;
+    if (!rawJd.trim()) {
+      showToast('Please paste a job description or provide a file/link first.');
+      return;
+    }
+    setIsAnalyzingJd(true);
+    try {
+      const result: any = await aiApi.atsAnalyze(currentResumeDataSnapshot(), rawJd);
+      setJdAnalysisResult({
+        matchPercent: result?.matchPercentage || result?.matchScore || 0,
+        missingKeywords: result?.missingKeywords || [],
+        requiredSkills: result?.requiredSkills || [],
+        recommendedSkills: result?.recommendedSkills || [],
+        missingMetrics: result?.missingMetrics || [],
+        suggestions: result?.recommendations || [],
+      });
+      showToast('Job description analyzed! Review findings below.');
+    } catch {
+      showToast('Could not analyze the job description — please try again.');
+    } finally {
+      setIsAnalyzingJd(false);
+    }
+  };
+
+  const handleGenerateTailoredResume = () => {
+    if (!jdAnalysisResult) {
+      showToast('Please analyze a job description first.');
+      return;
+    }
+    // Tailoring re-emphasizes and reorders the candidate's REAL content for
+    // this role — it must never invent a metric, skill, or technology the
+    // user didn't already provide. No fabricated bullets/skills are added
+    // here; only real resume data, carried over as-is.
+    const tailored: ParsedResumeData = {
+      title: `${docTitle.replace(/\.(pdf|docx)$/i, '')}_Tailored.pdf`,
+      targetRole: targetRole || personalInfo.jobTitle,
+      templateName: selectedTemplate,
+      resumeType,
+      personalInfo: {
+        ...personalInfo,
+        jobTitle: targetRole || personalInfo.jobTitle,
+      },
       experiences,
       education,
       skills,
       projects,
       certificates,
       achievements,
-      resumeType,
-    }).resumeData;
+    };
 
-  // Handlers for Tailored Resume Section
-  const handleJdFileUpload = async (file: File) => {
-    setJdFile(file);
-    setIsParsingJdFile(true);
-    try {
-      const extracted = await parseResumeFile(file);
-      if (extracted && extracted.trim().length > 20) {
-        setJdText(extracted.trim());
-        showToast(`Parsed job description from "${file.name}"`);
-      } else {
-        showToast(`Could not extract clear text from "${file.name}". Please paste the text directly.`);
-      }
-    } catch (err) {
-      console.warn('Failed to parse JD file:', err);
-      showToast('Could not parse file. Please copy & paste the JD text instead.');
-    } finally {
-      setIsParsingJdFile(false);
-    }
-  };
-
-  // Restore persisted JD match state on mount.
-  // IMPORTANT: Only restore jdAnalysisResult if it matches the current
-  // JdAnalysisResult schema (matchScore + matchedKeywords array). Old
-  // cached data used { matchPercent, missingKeywords: string[] } — restoring
-  // that into the new JSX would cause `undefined.length` → crash → blank page.
-  useEffect(() => {
-    try {
-      const storageKey = `hireflow_jd_match_${resumeId || 'current'}`;
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.jdText && typeof parsed.jdText === 'string') setJdText(parsed.jdText);
-        // Validate new format: must have matchScore (number) and matchedKeywords (array)
-        const r = parsed.jdAnalysisResult;
-        if (
-          r &&
-          typeof r.matchScore === 'number' &&
-          Array.isArray(r.matchedKeywords) &&
-          r.missingKeywords &&
-          typeof r.missingKeywords === 'object' &&
-          !Array.isArray(r.missingKeywords)
-        ) {
-          setJdAnalysisResult(r);
-        } else if (r) {
-          // Old/corrupted format — silently clear so the page doesn't crash
-          try { localStorage.removeItem(storageKey); } catch { /* ignore */ }
-        }
-        if (parsed.tailoredResumeData) setTailoredResumeData(parsed.tailoredResumeData);
-        if (parsed.activeResumeMode) setActiveResumeMode(parsed.activeResumeMode);
-      }
-    } catch {}
-  }, [resumeId]);
-
-  // Persist JD match state whenever it updates
-  useEffect(() => {
-    try {
-      const storageKey = `hireflow_jd_match_${resumeId || 'current'}`;
-      if (jdText || jdAnalysisResult || tailoredResumeData) {
-        localStorage.setItem(
-          storageKey,
-          JSON.stringify({
-            jdText,
-            jdAnalysisResult,
-            tailoredResumeData,
-            activeResumeMode,
-          })
-        );
-      }
-    } catch {}
-  }, [jdText, jdAnalysisResult, tailoredResumeData, activeResumeMode, resumeId]);
-
-  const handleAnalyzeJd = async () => {
-    let rawJd = jdText.trim();
-    if (!rawJd && jdFile) {
-      try {
-        setIsParsingJdFile(true);
-        rawJd = (await parseResumeFile(jdFile)).trim();
-        if (rawJd) setJdText(rawJd);
-      } catch {
-        // ignore
-      } finally {
-        setIsParsingJdFile(false);
-      }
-    }
-
-    if (jdTab === 'linkedin' && !rawJd && jdLinkedinUrl) {
-      showToast('Due to site security & CORS policies, please copy & paste the JD text into "Paste JD".');
-      setJdTab('paste');
-      return;
-    }
-
-    if (!rawJd || rawJd.length < 30) {
-      showToast('Please provide a complete Job Description (at least 30 characters) to analyze.');
-      return;
-    }
-
-    const snapshot = currentResumeDataSnapshot();
-    const hasContent = Boolean(
-      personalInfo.fullName.trim() ||
-      personalInfo.jobTitle.trim() ||
-      skills.trim() ||
-      experiences.length > 0 ||
-      projects.length > 0
-    );
-
-    if (!hasContent) {
-      showToast('Your resume appears empty. Please add skills or experience before matching against a JD.');
-      return;
-    }
-
-    setIsAnalyzingJd(true);
-    try {
-      const result = await analyzeJdMatchWithAI(snapshot, rawJd);
-      setJdAnalysisResult(result);
-      showToast(`Job description analyzed! Overall match: ${result.matchScore}%`);
-
-      // Persist JD in database if logged in
-      if (isAuthenticated() && isSupabaseConfigured()) {
-        try {
-          atsService.saveJobDescription(
-            targetRole || personalInfo.jobTitle || 'Target Role',
-            'Target Employer',
-            rawJd
-          );
-        } catch {}
-      }
-    } catch (err: any) {
-      console.error('JD Analysis error:', err);
-      showToast(`Analysis failed: ${err?.message || 'Please check your connection and try again.'}`);
-    } finally {
-      setIsAnalyzingJd(false);
-    }
-  };
-
-  const handleGenerateTailoredResume = async () => {
-    if (!jdAnalysisResult) {
-      showToast('Please analyze a job description first.');
-      return;
-    }
-    const rawJd = jdText.trim();
-    if (!rawJd) {
-      showToast('Target job description text is missing.');
-      return;
-    }
-
-    setIsTailoringResume(true);
-    try {
-      const snapshot = currentResumeDataSnapshot();
-      const aiResponse = await generateTailoredResumeWithAI(snapshot, rawJd, jdAnalysisResult);
-
-      const tailoredPersonalInfo = {
-        ...personalInfo,
-        jobTitle: targetRole || personalInfo.jobTitle,
-        summary: aiResponse.summary && aiResponse.summary.trim().length > 10 ? aiResponse.summary : personalInfo.summary,
-      };
-
-      const tailoredSkills = aiResponse.skills && aiResponse.skills.trim().length > 0 ? aiResponse.skills : skills;
-
-      const tailoredExperiences = experiences.map((exp, idx) => {
-        const bullets = (exp.id && aiResponse.experienceBullets[exp.id]) ||
-                        aiResponse.experienceBullets[String(idx)] ||
-                        exp.bullets;
-        return {
-          ...exp,
-          bullets: Array.isArray(bullets) && bullets.length > 0 ? bullets : exp.bullets,
-        };
-      });
-
-      const tailoredProjects = projects.map((proj, idx) => {
-        const bullets = (proj.id && aiResponse.projectBullets[proj.id]) ||
-                        aiResponse.projectBullets[String(idx)] ||
-                        proj.bullets;
-        return {
-          ...proj,
-          bullets: Array.isArray(bullets) && bullets.length > 0 ? bullets : proj.bullets,
-        };
-      });
-
-      const tailored: ParsedResumeData = {
-        id: `tailored_${Date.now()}`,
-        title: `${docTitle.replace(/\.(pdf|docx)$/i, '')} — Tailored`,
-        targetRole: targetRole || personalInfo.jobTitle,
-        templateName: selectedTemplate,
-        resumeType,
-        personalInfo: tailoredPersonalInfo,
-        experiences: tailoredExperiences,
-        education,
-        skills: tailoredSkills,
-        projects: tailoredProjects,
-        certificates,
-        achievements,
-        customSections,
-      };
-
-      setTailoredResumeData(tailored);
-      setActiveResumeMode('tailored');
-
-      try {
-        versionService.createTailoredVersion(
-          tailored,
-          rawJd,
-          'Target Employer',
-          targetRole || personalInfo.jobTitle
-        );
-      } catch (verErr) {
-        console.warn('versionService save notice:', verErr);
-      }
-
-      showToast('Tailored Resume generated! Live preview updated to Tailored view.');
-    } catch (err: any) {
-      console.error('Failed to generate tailored resume:', err);
-      showToast(`Failed to generate tailored resume: ${err?.message || 'Please try again.'}`);
-    } finally {
-      setIsTailoringResume(false);
-    }
-  };
-
-  const handleSaveTailoredAsNewVersion = async () => {
-    if (!tailoredResumeData) {
-      showToast('Please generate a tailored resume first.');
-      return;
-    }
-
-    setIsSavingNewVersion(true);
-    try {
-      const newTitle = `${docTitle.replace(/\.(pdf|docx)$/i, '')} — Tailored for ${targetRole || personalInfo.jobTitle || 'Target Role'}`;
-      const payload = {
-        title: newTitle,
-        targetRole: targetRole || personalInfo.jobTitle || 'Target Role',
-        templateName: selectedTemplate,
-        resumeType,
-        resumeData: {
-          ...tailoredResumeData,
-          title: newTitle,
-        },
-      };
-
-      const created = await createResume(payload);
-      showToast(`Saved as new resume version: "${created.title}"!`);
-
-      try {
-        versionService.createTailoredVersion(
-          tailoredResumeData,
-          jdText,
-          'Target Employer',
-          targetRole || personalInfo.jobTitle
-        );
-      } catch {}
-    } catch (err: any) {
-      console.error('Failed to save tailored resume as new version:', err);
-      showToast('Could not save new version. Please try again.');
-    } finally {
-      setIsSavingNewVersion(false);
-    }
-  };
-
-  const handleApplyTailoredToEditor = () => {
-    if (!tailoredResumeData) return;
-    setPersonalInfo({
-      fullName: tailoredResumeData.personalInfo.fullName || '',
-      jobTitle: tailoredResumeData.personalInfo.jobTitle || '',
-      email: tailoredResumeData.personalInfo.email || '',
-      phone: tailoredResumeData.personalInfo.phone || '',
-      location: tailoredResumeData.personalInfo.location || '',
-      website: tailoredResumeData.personalInfo.website || '',
-      github: tailoredResumeData.personalInfo.github || '',
-      linkedin: tailoredResumeData.personalInfo.linkedin || '',
-      summary: tailoredResumeData.personalInfo.summary || '',
-    });
-    setSkills(tailoredResumeData.skills || '');
-    setExperiences(tailoredResumeData.experiences || []);
-    setProjects(tailoredResumeData.projects || []);
-    setActiveResumeMode('original');
-    showToast('Applied tailored improvements to the resume editor!');
-  };
-
-  const handleRevertToOriginal = () => {
-    setActiveResumeMode('original');
-    showToast('Switched back to Original Resume preview.');
+    setTailoredResumeData(tailored);
+    setActiveResumeMode('tailored');
+    showToast('Tailored Resume generated! Live preview updated to Tailored view.');
   };
 
   // After a login redirect, sessionStorage may hold a pending export type.
@@ -729,7 +492,7 @@ export default function ResumeEditorPage() {
           website: mapped.personalInfo.website || '',
           github: mapped.personalInfo.github || '',
           linkedin: mapped.personalInfo.linkedin || '',
-          summary: extractSummaryText(mapped.personalInfo.summary),
+          summary: mapped.personalInfo.summary || '',
         });
         setUrlErrors({
           linkedin: validateLinkedInUrl(mapped.personalInfo.linkedin).error,
@@ -934,10 +697,7 @@ export default function ResumeEditorPage() {
       resumeType,
       resumeStyling,
       personalInfo: visibleSectionIds.has('personal')
-        ? {
-            ...displayPersonalInfo,
-            summary: extractSummaryText(displayPersonalInfo.summary),
-          }
+        ? personalInfo
         : {
             fullName: '',
             jobTitle: '',
@@ -946,12 +706,12 @@ export default function ResumeEditorPage() {
             location: '',
             summary: '',
           },
-      experiences: visibleSectionIds.has('experience') ? displayExperiences : [],
-      education: visibleSectionIds.has('education') ? displayEducation : [],
-      skills: visibleSectionIds.has('skills') ? (normalizeSkills(displaySkills) || '') : '',
-      projects: visibleSectionIds.has('projects') ? displayProjects : [],
-      certificates: visibleSectionIds.has('certificates') ? displayCertificates : [],
-      achievements: visibleSectionIds.has('achievements') ? displayAchievements : [],
+      experiences: visibleSectionIds.has('experience') ? experiences : [],
+      education: visibleSectionIds.has('education') ? education : [],
+      skills: visibleSectionIds.has('skills') ? (skills || '') : '',
+      projects: visibleSectionIds.has('projects') ? projects : [],
+      certificates: visibleSectionIds.has('certificates') ? certificates : [],
+      achievements: visibleSectionIds.has('achievements') ? achievements : [],
       customSections: customSections.filter((c) => visibleSectionIds.has(c.id)),
       sectionsOrder: sections,
     };
@@ -959,20 +719,18 @@ export default function ResumeEditorPage() {
     resumeId,
     docTitle,
     targetRole,
-    displayPersonalInfo,
+    personalInfo,
     selectedTemplate,
     resumeType,
     resumeStyling,
-    displayExperiences,
-    displayEducation,
-    displaySkills,
-    displayProjects,
-    displayCertificates,
-    displayAchievements,
+    experiences,
+    education,
+    skills,
+    projects,
+    certificates,
+    achievements,
     customSections,
     sections,
-    activeResumeMode,
-    tailoredResumeData,
   ]);
 
   // Recalculate ATS score automatically whenever the user edits, adds, deletes, hides, or reorders any section
@@ -980,17 +738,15 @@ export default function ResumeEditorPage() {
     if (isLoadingResume) return;
 
     setIsCalculatingAts(true);
+    let cancelled = false;
 
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       try {
         const snapshot = buildActiveResumeSnapshot();
-        const report = atsEngine.analyzeResume(snapshot, {
-          jobDescription: jdText && jdText.trim().length >= 10 ? jdText : undefined,
-        });
+        const report = await aiService.atsAnalyze(snapshot);
+        const clampedScore = Math.min(report.overallScore, 99);
 
-        // Clamp score (0 - 99): Never claim 100% ATS compatibility
-        const clampedScore = Math.min(report.finalScore, 99);
-
+        if (cancelled) return;
         setAtsReport(report);
         setLiveAtsScore(clampedScore);
         setAtsLastUpdatedText('Updated just now');
@@ -1022,7 +778,7 @@ export default function ResumeEditorPage() {
       }
     }, 800); // 800ms debounce
 
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [buildActiveResumeSnapshot, jdText, isLoadingResume, resumeId]);
 
   // Helper Toast
@@ -1288,6 +1044,20 @@ export default function ResumeEditorPage() {
     }, 3000);
   };
 
+  // Real AI calls via Supabase Edge Functions (Gemini-powered, falls back gracefully if no API key set)
+  const currentResumeDataSnapshot = () =>
+    toBackendPayload({
+      docTitle,
+      targetRole,
+      personalInfo,
+      experiences,
+      education,
+      skills,
+      projects,
+      certificates,
+      achievements,
+      resumeType,
+    }).resumeData;
 
   /**
    * Refines the job title using the SAME text the user already entered —
@@ -2436,7 +2206,7 @@ export default function ResumeEditorPage() {
                   <div className="space-y-2 text-xs">
                     <AiWritingAssistantInline
                       label="Executive Summary Text"
-                      value={typeof personalInfo.summary === 'string' ? personalInfo.summary : extractSummaryText(personalInfo.summary)}
+                      value={personalInfo.summary}
                       onChange={(newVal) => setPersonalInfo({ ...personalInfo, summary: newVal })}
                       section="summary"
                       multiline
@@ -3413,7 +3183,7 @@ export default function ResumeEditorPage() {
                           liveAtsScore >= 40 ? 'bg-amber-100 text-amber-800' :
                           'bg-red-100 text-red-800'
                         }`}>
-                          {atsReport?.scoreLabel || 'Score'}
+                          Score
                         </span>
                       )}
                     </div>
@@ -3475,114 +3245,7 @@ export default function ResumeEditorPage() {
                     </div>
                   </div>
 
-                  {/* 8 Standard ATS Categories Live Checklist */}
-                  {atsReport && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                          ATS EVALUATION (8 KEY CATEGORIES)
-                        </span>
-                        <span className="text-[9px] text-slate-400 font-mono">100% Deterministic</span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {(atsReport.standardCategories || [
-                          (atsReport.categories as any)?.contact || atsReport.categories?.contactInfo,
-                          (atsReport.categories as any)?.structure || atsReport.categories?.sections,
-                          atsReport.categories?.experience,
-                          (atsReport.categories as any)?.skills || atsReport.categories?.hardSkills,
-                          atsReport.categories?.projects,
-                          atsReport.categories?.education,
-                          atsReport.categories?.formatting,
-                          (atsReport.categories as any)?.contentQuality || atsReport.categories?.metrics,
-                        ].filter(Boolean)).map((cat: any, idx: number) => {
-                          const weightMap: Record<string, string> = {
-                            contactInfo: '10%',
-                            contact: '10%',
-                            sections: '10%',
-                            structure: '10%',
-                            experience: '20%',
-                            hardSkills: '15%',
-                            skills: '15%',
-                            projects: '15%',
-                            education: '10%',
-                            formatting: '10%',
-                            metrics: '10%',
-                            contentQuality: '10%',
-                          };
-                          const weight = weightMap[cat.key] || '10%';
-                          return (
-                            <div
-                              key={cat.key || idx}
-                              className="p-2.5 bg-slate-50 border border-slate-200/90 rounded-lg flex items-start justify-between gap-2 text-xs transition-colors hover:bg-white"
-                            >
-                              <div className="space-y-0.5 flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className={`w-2 h-2 rounded-full shrink-0 ${
-                                    cat.score >= 80 ? 'bg-emerald-500' :
-                                    cat.score >= 60 ? 'bg-blue-500' :
-                                    cat.score >= 40 ? 'bg-amber-500' : 'bg-red-500'
-                                  }`} />
-                                  <span className="font-bold text-[#0B192C] text-[11px] truncate">{cat.label}</span>
-                                  <span className="text-[9px] font-mono px-1 py-0.2 bg-slate-200/80 text-slate-600 rounded">
-                                    Weight: {weight}
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-slate-500 leading-tight">{cat.reason}</p>
-                                {cat.fixSuggestion && cat.score < 80 && (
-                                  <p className="text-[10px] text-blue-700 font-medium pt-0.5">💡 {cat.fixSuggestion}</p>
-                                )}
-                              </div>
-                              <div className="text-right shrink-0">
-                                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-700 block">
-                                  {cat.score}/100
-                                </span>
-                                <span className={`text-[9px] font-bold block pt-0.5 ${
-                                  cat.score >= 80 ? 'text-emerald-600' :
-                                  cat.score >= 60 ? 'text-blue-600' :
-                                  cat.score >= 40 ? 'text-amber-600' : 'text-red-600'
-                                }`}>
-                                  {cat.score >= 80 ? 'Passed' : cat.score >= 60 ? 'Good' : 'Needs Fix'}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
-                  {/* Missing Keywords from Job Description (if JD is provided) */}
-                  {atsReport && atsReport.missingKeywords && atsReport.missingKeywords.length > 0 && (
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
-                        MISSING FROM RESUME (FOUND IN TARGET JD)
-                      </span>
-                      <p className="text-[10px] text-slate-500">
-                        Found in Job Description but not detected in your resume:
-                      </p>
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {atsReport.missingKeywords.slice(0, 10).map((item) => {
-                          const kw = typeof item === 'string' ? item : item.keyword;
-                          return (
-                            <button
-                              key={kw}
-                              onClick={() => {
-                                if (!skills.toLowerCase().includes(kw.toLowerCase())) {
-                                  setSkills((prev) => (prev ? `${prev}, ${kw}` : kw));
-                                  showToast(`Added "${kw}" to Skills section!`);
-                                }
-                              }}
-                              className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-semibold rounded flex items-center gap-1 cursor-pointer transition-colors"
-                              title={`Found in Job Description but missing from your resume. Click to review/add.`}
-                            >
-                              <span>+ {kw}</span>
-                              <span className="text-[9px] font-mono text-amber-700">(Review)</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Button to full ATS Analysis Page */}
                   <div className="pt-1">
@@ -3673,21 +3336,12 @@ export default function ResumeEditorPage() {
                     <div className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center space-y-2 bg-slate-50">
                       <FileText className="mx-auto text-slate-400" size={20} />
                       <p className="text-xs text-slate-600 font-medium">
-                        {isParsingJdFile
-                          ? 'Extracting text from file...'
-                          : jdFile
-                          ? jdFile.name
-                          : 'Upload PDF, DOCX or TXT Job Description'}
+                        {jdFile ? jdFile.name : 'Upload PDF, DOCX or TXT Job Description'}
                       </p>
-                      {jdText && jdTab === 'upload' && (
-                        <p className="text-[10px] text-emerald-600 font-semibold">
-                          ✓ Successfully extracted {jdText.length} characters
-                        </p>
-                      )}
                       <input
                         type="file"
                         accept=".pdf,.docx,.doc,.txt"
-                        onChange={(e) => e.target.files?.[0] && handleJdFileUpload(e.target.files[0])}
+                        onChange={(e) => e.target.files?.[0] && setJdFile(e.target.files[0])}
                         className="hidden"
                         id="jd-file-input"
                       />
@@ -3701,29 +3355,17 @@ export default function ResumeEditorPage() {
                   )}
 
                   {jdTab === 'linkedin' && (
-                    <div className="space-y-2">
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                          Job Posting URL
-                        </label>
-                        <input
-                          type="text"
-                          value={jdLinkedinUrl}
-                          onChange={(e) => setJdLinkedinUrl(e.target.value)}
-                          placeholder="https://www.linkedin.com/jobs/view/..."
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-sans text-[#0B192C] focus:outline-none focus:ring-1 focus:ring-[#0B192C]"
-                        />
-                      </div>
-                      <div className="p-2.5 bg-blue-50/70 border border-blue-100 rounded-lg text-[11px] text-blue-900 leading-relaxed">
-                        <span className="font-bold">Recommendation:</span> Due to LinkedIn security and CORS protections, copy and paste the job description text into the{' '}
-                        <button
-                          onClick={() => setJdTab('paste')}
-                          className="font-bold underline text-blue-700 hover:text-blue-900 cursor-pointer"
-                        >
-                          Paste JD tab
-                        </button>{' '}
-                        for direct analysis.
-                      </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Job Posting URL
+                      </label>
+                      <input
+                        type="text"
+                        value={jdLinkedinUrl}
+                        onChange={(e) => setJdLinkedinUrl(e.target.value)}
+                        placeholder="https://www.linkedin.com/jobs/view/..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-sans text-[#0B192C] focus:outline-none focus:ring-1 focus:ring-[#0B192C]"
+                      />
                     </div>
                   )}
 
@@ -3731,359 +3373,20 @@ export default function ResumeEditorPage() {
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       onClick={handleAnalyzeJd}
-                      disabled={isAnalyzingJd || isParsingJdFile}
+                      disabled={isAnalyzingJd}
                       className="flex-1 py-2 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-60 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                     >
                       <Sparkles size={14} className="text-blue-400" />
-                      <span>{isAnalyzingJd ? 'Analyzing...' : isParsingJdFile ? 'Parsing File...' : 'Analyze & Match JD'}</span>
+                      <span>{isAnalyzingJd ? 'Analyzing...' : 'Analyze & Match JD'}</span>
                     </button>
                     <button
-                      onClick={() => {
-                        const activeSnapshot = buildActiveResumeSnapshot();
-                        navigate('/app/ats-analysis', {
-                          state: {
-                            parsedResume: activeSnapshot,
-                            jobDescription: jdText.trim() || undefined,
-                            analysisMode: jdText.trim() ? 'jd' : 'general',
-                          },
-                        });
-                      }}
+                      onClick={() => navigate('/app/ats-analysis')}
                       className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                      title="Open Full ATS Deep Dive with this Resume & JD"
+                      title="Open Full ATS Deep Dive"
                     >
                       <span>Full ATS</span>
                     </button>
                   </div>
-
-                  {/* JD Analysis Results Panel */}
-                  {jdAnalysisResult && (
-                    <div className="pt-3 border-t border-slate-100 space-y-4 animate-in fade-in duration-200">
-                      {/* Overall Match Score Banner */}
-                      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm border ${
-                              jdAnalysisResult.matchScore >= 80
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : jdAnalysisResult.matchScore >= 60
-                                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                : 'bg-amber-50 text-amber-700 border-amber-200'
-                            }`}>
-                              <Target size={16} />
-                            </div>
-                            <div>
-                              <div className="text-[11px] font-bold text-[#0B192C]">Job Match Score</div>
-                              <div className="text-[10px] text-slate-500">Based on required skills & qualifications</div>
-                            </div>
-                          </div>
-                          <div className={`px-2.5 py-1 rounded-full font-bold text-sm border ${
-                            jdAnalysisResult.matchScore >= 80
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                              : jdAnalysisResult.matchScore >= 60
-                              ? 'bg-blue-100 text-blue-800 border-blue-300'
-                              : 'bg-amber-100 text-amber-800 border-amber-300'
-                          }`}>
-                            {jdAnalysisResult.matchScore}%
-                          </div>
-                        </div>
-
-                        {/* Progress Bar */}
-                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-500 rounded-full ${
-                              jdAnalysisResult.matchScore >= 80
-                                ? 'bg-emerald-500'
-                                : jdAnalysisResult.matchScore >= 60
-                                ? 'bg-blue-500'
-                                : 'bg-amber-500'
-                            }`}
-                            style={{ width: `${Math.min(100, Math.max(5, jdAnalysisResult.matchScore))}%` }}
-                          />
-                        </div>
-                        <p className="text-[9px] text-slate-400 italic">
-                          Matches real skills & experiences from your resume against JD requirements. Zero AI hallucination.
-                        </p>
-                      </div>
-
-                      {/* Matched Keywords */}
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
-                            <CheckCircle2 size={12} className="text-emerald-600" />
-                            Matched Keywords ({jdAnalysisResult.matchedKeywords?.length ?? 0})
-                          </span>
-                        </div>
-                        {(jdAnalysisResult.matchedKeywords?.length ?? 0) > 0 ? (
-                          <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
-                            {(jdAnalysisResult.matchedKeywords ?? []).map((mk, idx) => (
-                              <span
-                                key={idx}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200/90 rounded-md text-[11px] font-medium"
-                                title={`Found in: ${mk.foundIn || 'Resume'}`}
-                              >
-                                <Check size={10} className="text-emerald-600" />
-                                <span>{mk.keyword}</span>
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-[11px] text-slate-400 italic">No direct keyword matches detected yet.</p>
-                        )}
-                      </div>
-
-                      {/* Categorized Missing Keywords */}
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
-                            <AlertCircle size={12} className="text-amber-600" />
-                            Missing Keywords
-                          </span>
-                        </div>
-
-                        {/* Category Filter Pills */}
-                        <div className="flex flex-wrap gap-1 text-[10px]">
-                          {(['all', 'technicalSkills', 'tools', 'frameworks', 'concepts', 'domainKeywords'] as const).map((cat) => {
-                            const missingKws = (jdAnalysisResult.missingKeywords && !Array.isArray(jdAnalysisResult.missingKeywords))
-                              ? jdAnalysisResult.missingKeywords
-                              : {} as typeof jdAnalysisResult.missingKeywords;
-                            const count = cat === 'all'
-                              ? Object.values(missingKws).flat().length
-                              : (missingKws[cat] || []).length;
-                            if (cat !== 'all' && count === 0) return null;
-                            const labelMap: Record<string, string> = {
-                              all: 'All',
-                              technicalSkills: 'Technical',
-                              tools: 'Tools',
-                              frameworks: 'Frameworks',
-                              concepts: 'Concepts',
-                              domainKeywords: 'Domain',
-                            };
-                            return (
-                              <button
-                                key={cat}
-                                onClick={() => setMissingKeywordFilter(cat)}
-                                className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
-                                  missingKeywordFilter === cat
-                                    ? 'bg-[#0B192C] text-white'
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}
-                              >
-                                {labelMap[cat]} ({count})
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Keyword Pills */}
-                        {(() => {
-                          const missingKws = (jdAnalysisResult.missingKeywords && !Array.isArray(jdAnalysisResult.missingKeywords))
-                            ? jdAnalysisResult.missingKeywords
-                            : {} as typeof jdAnalysisResult.missingKeywords;
-                          const activeKeywords = missingKeywordFilter === 'all'
-                            ? Object.values(missingKws).flat()
-                            : missingKws[missingKeywordFilter] || [];
-
-                          return activeKeywords.length > 0 ? (
-                            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
-                              {activeKeywords.map((kw, idx) => (
-                                <span
-                                  key={idx}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200/90 rounded-md text-[11px] font-medium"
-                                >
-                                  <AlertCircle size={10} className="text-amber-600" />
-                                  <span>{kw}</span>
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-emerald-600 font-medium">All relevant keywords in this category are matched!</p>
-                          );
-                        })()}
-                        <p className="text-[9px] text-slate-400 italic">
-                          Important: Only incorporate skills you genuinely possess. Do not fabricate experience.
-                        </p>
-                      </div>
-
-                      {/* Recommended Skills */}
-                      {(jdAnalysisResult.recommendedSkills?.length ?? 0) > 0 && (
-                        <div className="space-y-1.5">
-                          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles size={12} className="text-blue-600" />
-                            Skill Recommendations
-                          </span>
-                          <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                            {(jdAnalysisResult.recommendedSkills ?? []).map((rs, idx) => {
-                              const badgeStyle = rs.status === 'already_present'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : rs.status === 'relevant_missing'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : 'bg-blue-50 text-blue-700 border-blue-200';
-                              const badgeText = rs.status === 'already_present'
-                                ? 'In Resume'
-                                : rs.status === 'relevant_missing'
-                                ? 'Target Required'
-                                : 'Consider';
-
-                              return (
-                                <div key={idx} className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-0.5">
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-bold text-slate-800">{rs.skill}</span>
-                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${badgeStyle}`}>
-                                      {badgeText}
-                                    </span>
-                                  </div>
-                                  <p className="text-[11px] text-slate-500">{rs.reason}</p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Experience Gaps & Project Recommendations */}
-                      {((jdAnalysisResult.experienceGaps?.length ?? 0) > 0 || (jdAnalysisResult.projectRecommendations?.length ?? 0) > 0) && (
-                        <div className="space-y-2">
-                          {(jdAnalysisResult.experienceGaps?.length ?? 0) > 0 && (
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
-                                Experience Gaps
-                              </span>
-                              {(jdAnalysisResult.experienceGaps ?? []).map((eg, idx) => (
-                                <div key={idx} className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                                  <span className="font-bold text-slate-700 block">{eg.gap}</span>
-                                  <span className="text-[11px] text-slate-500">{eg.details}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {(jdAnalysisResult.projectRecommendations?.length ?? 0) > 0 && (
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
-                                Project Suggestions
-                              </span>
-                              {(jdAnalysisResult.projectRecommendations ?? []).map((pr, idx) => (
-                                <div key={idx} className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                                  <span className="font-bold text-slate-700 block">{pr.recommendation}</span>
-                                  <span className="text-[11px] text-slate-500">{pr.details}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Resume Improvements */}
-                      {(jdAnalysisResult.resumeImprovements?.length ?? 0) > 0 && (
-                        <div className="space-y-1.5">
-                          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
-                            Content Refinements
-                          </span>
-                          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                            {(jdAnalysisResult.resumeImprovements ?? []).map((imp, idx) => (
-                              <div key={idx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-slate-800">{imp.section}</span>
-                                  <span className="text-[10px] text-slate-400 font-medium">ATS alignment</span>
-                                </div>
-                                {imp.current && (
-                                  <div className="p-1.5 bg-rose-50/70 border border-rose-100 rounded text-[11px] text-rose-800 line-through">
-                                    {imp.current}
-                                  </div>
-                                )}
-                                <div className="p-1.5 bg-emerald-50/70 border border-emerald-100 rounded text-[11px] text-emerald-800 font-medium">
-                                  {imp.suggested}
-                                </div>
-                                <p className="text-[10px] text-slate-500 italic">{imp.reason}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Summary Suggestion */}
-                      {jdAnalysisResult.summarySuggestion && (
-                        <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1">
-                              <Sparkles size={11} className="text-blue-600" />
-                              Suggested Summary
-                            </span>
-                            <button
-                              onClick={() => {
-                                setPersonalInfo((prev) => ({ ...prev, summary: jdAnalysisResult.summarySuggestion! }));
-                                showToast('Applied suggested summary to your resume!');
-                              }}
-                              className="px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold hover:bg-blue-700 cursor-pointer transition-colors"
-                            >
-                              Use in Summary
-                            </button>
-                          </div>
-                          <p className="text-[11px] text-blue-900/90 leading-relaxed italic">
-                            "{jdAnalysisResult.summarySuggestion}"
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Generate Tailored Resume Action */}
-                      <div className="pt-2 border-t border-slate-100 space-y-2">
-                        <button
-                          onClick={handleGenerateTailoredResume}
-                          disabled={isTailoringResume}
-                          className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-all"
-                        >
-                          <Sparkles size={14} className="text-blue-200" />
-                          <span>{isTailoringResume ? 'Generating Tailored Resume...' : 'Generate Tailored Resume'}</span>
-                        </button>
-
-                        {tailoredResumeData && (
-                          <div className="space-y-2 pt-2 border-t border-slate-100 animate-in fade-in duration-150">
-                            <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
-                              <span className="flex items-center gap-1 text-blue-700">
-                                <Sparkles size={12} />
-                                Tailored Resume Ready
-                              </span>
-                              <button
-                                onClick={() => {
-                                  const nextMode = activeResumeMode === 'tailored' ? 'original' : 'tailored';
-                                  setActiveResumeMode(nextMode);
-                                  showToast(nextMode === 'tailored' ? 'Previewing Tailored Resume.' : 'Previewing Original Resume.');
-                                }}
-                                className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
-                              >
-                                {activeResumeMode === 'tailored' ? '✓ Showing Tailored (Click for Original)' : 'Show Tailored in Preview'}
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-                              <button
-                                onClick={handleApplyTailoredToEditor}
-                                className="py-2 px-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer text-center"
-                                title="Apply changes directly into editor fields"
-                              >
-                                Apply Changes
-                              </button>
-                              <button
-                                onClick={handleSaveTailoredAsNewVersion}
-                                disabled={isSavingNewVersion}
-                                className="py-2 px-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-60 text-blue-800 border border-blue-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer text-center"
-                                title="Save as a separate resume version without overwriting original"
-                              >
-                                {isSavingNewVersion ? 'Saving...' : 'Save Version'}
-                              </button>
-                              <button
-                                onClick={() => setShowTailoredComparisonModal(true)}
-                                className="py-2 px-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer text-center"
-                                title="Compare side-by-side with original resume"
-                              >
-                                Compare
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -4105,50 +3408,7 @@ export default function ResumeEditorPage() {
                     <span className="font-bold text-slate-700 text-[11px]">Live Resume Preview</span>
                   </div>
 
-                  {tailoredResumeData && (
-                    <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                      <button
-                        onClick={() => {
-                          setActiveResumeMode('original');
-                          showToast('Viewing Original Resume.');
-                        }}
-                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
-                          activeResumeMode === 'original'
-                            ? 'bg-white text-[#0B192C] shadow-2xs'
-                            : 'text-slate-500 hover:text-[#0B192C]'
-                        }`}
-                      >
-                        Original
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActiveResumeMode('tailored');
-                          showToast('Viewing Tailored Resume.');
-                        }}
-                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer flex items-center gap-1 ${
-                          activeResumeMode === 'tailored'
-                            ? 'bg-[#0B192C] text-white shadow-2xs'
-                            : 'text-slate-500 hover:text-[#0B192C]'
-                        }`}
-                      >
-                        <Sparkles size={10} className={activeResumeMode === 'tailored' ? 'text-blue-400' : 'text-slate-400'} />
-                        <span>Tailored</span>
-                      </button>
-                    </div>
-                  )}
 
-                  {activeResumeMode === 'tailored' && tailoredResumeData && (
-                    <div className="hidden sm:flex items-center gap-1">
-                      <button
-                        onClick={handleApplyTailoredToEditor}
-                        className="px-2 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                        title="Apply tailored version content into editor fields"
-                      >
-                        <Check size={10} />
-                        <span>Apply to Editor</span>
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 {/* Page Nav */}
@@ -4312,157 +3572,6 @@ export default function ResumeEditorPage() {
               <button
                 onClick={() => setShowComparisonModal(false)}
                 className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold text-xs rounded cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 4. TAILORED RESUME VS ORIGINAL COMPARISON MODAL */}
-      {showTailoredComparisonModal && tailoredResumeData && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-4 bg-[#0B192C] text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles size={18} className="text-blue-400" />
-                <div>
-                  <h3 className="font-bold text-sm tracking-tight">Compare Original vs. Tailored Resume</h3>
-                  <p className="text-[10px] text-slate-300">
-                    Target Role: <strong className="text-white">{targetRole || personalInfo.jobTitle || 'Target Role'}</strong> — grounded exclusively in your real qualifications.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowTailoredComparisonModal(false)}
-                className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto space-y-6 text-xs bg-slate-50 flex-1">
-              {/* Summary Comparison */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
-                <div className="flex items-center justify-between border-b pb-1.5">
-                  <span className="font-bold text-[#0B192C] text-xs">Professional Summary</span>
-                  {personalInfo.summary !== tailoredResumeData.personalInfo?.summary && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Optimized for JD
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-                  <div className="space-y-1">
-                    <span className="font-mono text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Original</span>
-                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 leading-relaxed min-h-[50px]">
-                      {personalInfo.summary || <span className="text-slate-400 italic">(Empty)</span>}
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="font-mono text-[9px] font-bold text-emerald-700 uppercase tracking-wider block">Tailored</span>
-                    <div className="p-2.5 bg-emerald-50/60 border border-emerald-200 rounded-lg text-slate-800 leading-relaxed min-h-[50px] font-medium">
-                      {tailoredResumeData.personalInfo?.summary || <span className="text-slate-400 italic">(Unchanged)</span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Skills Comparison */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
-                <div className="flex items-center justify-between border-b pb-1.5">
-                  <span className="font-bold text-[#0B192C] text-xs">Skills Ordering & Alignment</span>
-                  {skills !== tailoredResumeData.skills && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Reordered by JD Relevance
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-                  <div className="space-y-1">
-                    <span className="font-mono text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Original</span>
-                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-mono text-[11px] leading-relaxed">
-                      {skills || <span className="text-slate-400 italic">(Empty)</span>}
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="font-mono text-[9px] font-bold text-emerald-700 uppercase tracking-wider block">Tailored</span>
-                    <div className="p-2.5 bg-emerald-50/60 border border-emerald-200 rounded-lg text-slate-800 font-mono text-[11px] leading-relaxed font-medium">
-                      {tailoredResumeData.skills || <span className="text-slate-400 italic">(Unchanged)</span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Experience Comparison */}
-              {experiences.length > 0 && (
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-                  <div className="border-b pb-1.5">
-                    <span className="font-bold text-[#0B192C] text-xs">Experience Bullets</span>
-                  </div>
-                  <div className="space-y-3">
-                    {experiences.map((exp, idx) => {
-                      const tailoredExp = tailoredResumeData.experiences?.[idx];
-                      return (
-                        <div key={exp.id || idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 space-y-2">
-                          <div className="font-bold text-slate-800 text-[11px]">
-                            {exp.title} {exp.company ? `@ ${exp.company}` : ''}
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                              <span className="font-mono text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Original Bullets</span>
-                              <ul className="list-disc list-inside space-y-1 text-slate-600 text-[11px]">
-                                {exp.bullets.map((b, bIdx) => (
-                                  <li key={bIdx}>{b}</li>
-                                ))}
-                              </ul>
-                            </div>
-                            <div>
-                              <span className="font-mono text-[9px] font-bold text-emerald-700 uppercase tracking-wider block mb-1">Tailored Bullets</span>
-                              <ul className="list-disc list-inside space-y-1 text-slate-800 text-[11px] font-medium">
-                                {(tailoredExp?.bullets || exp.bullets).map((b, bIdx) => (
-                                  <li key={bIdx} className={b !== exp.bullets[bIdx] ? 'bg-emerald-100/60 px-1 rounded' : ''}>{b}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Anti-hallucination guarantee footer */}
-              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-[11px] text-blue-900 leading-relaxed">
-                <span className="font-bold">Zero Fabrication Guarantee:</span> Every item in this tailored resume is derived strictly from your existing input. No fake jobs, degrees, certifications, or fictitious metrics were created.
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-100 border-t border-slate-200 flex flex-wrap items-center justify-end gap-2">
-              <button
-                onClick={() => {
-                  handleApplyTailoredToEditor();
-                  setShowTailoredComparisonModal(false);
-                }}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-colors"
-              >
-                Apply to Editor
-              </button>
-              <button
-                onClick={() => {
-                  handleSaveTailoredAsNewVersion();
-                  setShowTailoredComparisonModal(false);
-                }}
-                disabled={isSavingNewVersion}
-                className="px-3.5 py-1.5 bg-[#0B192C] hover:bg-slate-800 disabled:opacity-60 text-white font-bold text-xs rounded-lg cursor-pointer transition-colors"
-              >
-                {isSavingNewVersion ? 'Saving...' : 'Save as New Version'}
-              </button>
-              <button
-                onClick={() => setShowTailoredComparisonModal(false)}
-                className="px-3.5 py-1.5 bg-white border border-slate-300 text-slate-700 font-bold text-xs rounded-lg cursor-pointer hover:bg-slate-50 transition-colors"
               >
                 Close
               </button>

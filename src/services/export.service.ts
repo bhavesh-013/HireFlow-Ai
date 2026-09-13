@@ -18,8 +18,19 @@ import {
   UnderlineType,
 } from 'docx';
 import type { ParsedResumeData, SectionNavItem } from '../types';
-import { getDefaultSectionItems } from './section.reorder';
 import { templatesConfigService, type AtsTemplateItem } from './templateConfig.service';
+
+function getDefaultSectionItems(type: 'fresher' | 'experienced' | string): SectionNavItem[] {
+  return [
+    { id: 'summary', type: 'summary', title: 'Professional Summary', visible: true, order: 0 },
+    { id: 'experience', type: 'experience', title: 'Work Experience', visible: true, order: 1 },
+    { id: 'education', type: 'education', title: 'Education', visible: true, order: 2 },
+    { id: 'skills', type: 'skills', title: 'Skills', visible: true, order: 3 },
+    { id: 'projects', type: 'projects', title: 'Projects', visible: true, order: 4 },
+    { id: 'certificates', type: 'certificates', title: 'Certificates', visible: true, order: 5 },
+    { id: 'achievements', type: 'achievements', title: 'Achievements', visible: true, order: 6 },
+  ];
+}
 
 /**
  * Produces clean, safe filenames for PDF and DOCX downloads.

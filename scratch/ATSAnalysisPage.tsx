@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { parseResumeFile } from '../utils/fileParser';
 import { parseResumeText } from '../utils/resumeTextParser';
-import { ParsedResumeData, ATSResult } from '../types';
+import { ParsedResumeData, AtsAnalysisResponse, CategoryName, ResumeCategory } from '../types';
 import { isAuthenticated } from '../lib/api';
 import { rememberCurrentLocationForRedirect } from '../lib/authGate';
 import LoginRequiredModal from '../components/app/LoginRequiredModal';
@@ -41,7 +41,7 @@ export default function ATSAnalysisPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const [atsReport, setAtsReport] = useState<ATSResult | null>(null);
+  const [atsReport, setAtsReport] = useState<AtsAnalysisResponse | null>(null);
   const [atsScore, setAtsScore] = useState(0);
   const [atsError, setAtsError] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -64,9 +64,9 @@ export default function ATSAnalysisPage() {
     setIsScanning(true);
     setAtsError(null);
     try {
-      const report: any = await aiService.atsAnalyze(resumeData, jd);
+      const report = await aiService.atsAnalyze(resumeData, jd);
       setAtsReport(report);
-      setAtsScore(report.overallScore || report.atsScore?.score || 0);
+      setAtsScore(report.atsScore.score);
       return report;
     } catch (error) {
       console.error('ATS analysis failed:', error);
@@ -183,89 +183,35 @@ export default function ATSAnalysisPage() {
 
   const renderCategoryCards = () => {
     if (!atsReport) return null;
-    const { breakdown, missingKeywords, missingSkills, sectionIssues, formattingIssues, recommendations } = atsReport as any;
+    const iconMap: Record<CategoryName, any> = {
+      contactAndHeader: UserCheck, summary: AlignLeft, skillsAndKeywords: Cpu,
+      experience: BriefcaseBusiness, projects: FileCode, education: BookOpen,
+      certificationsAndAchievements: CheckCircle2, formattingAndAtsCompatibility: Layout
+    };
     
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Keywords */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+    return Object.entries(atsReport.resumeAnalysis).map(([key, cat]) => {
+      const data = cat as ResumeCategory;
+      const Icon = iconMap[key as CategoryName] || CheckCircle;
+      return (
+        <div key={key} className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
           <div className="flex items-center gap-2 mb-2">
-            <Cpu size={18} className="text-blue-600"/>
-            <h3 className="font-bold">Keywords</h3>
-            <span className="ml-auto font-bold">{breakdown?.keywords || 0}/100</span>
+            <Icon size={18} className="text-blue-600"/>
+            <h3 className="font-bold capitalize">{key.replace(/([A-Z])/g, ' $1')}</h3>
+            <span className="ml-auto font-bold">{data.score}/100</span>
           </div>
-          {missingKeywords && missingKeywords.length > 0 ? (
-            <ul className="text-xs text-amber-600 list-disc pl-4 space-y-1 mt-2">
-              {missingKeywords.slice(0, 3).map((k: any, i: number) => <li key={i}>Missing: {k.keyword} ({k.importance})</li>)}
-            </ul>
-          ) : <p className="text-xs text-emerald-600 mt-2">Excellent keyword coverage!</p>}
-        </div>
-
-        {/* Skills */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle2 size={18} className="text-blue-600"/>
-            <h3 className="font-bold">Skills</h3>
-            <span className="ml-auto font-bold">{breakdown?.skills || 0}/100</span>
-          </div>
-          {missingSkills && missingSkills.length > 0 ? (
+          {data.problems.length > 0 ? (
             <ul className="text-xs text-red-600 list-disc pl-4 space-y-1 mt-2">
-              {missingSkills.slice(0, 3).map((s: any, i: number) => <li key={i}>Missing {s.required ? 'Required' : 'Preferred'}: {s.skill}</li>)}
+              {data.problems.map((p, i) => <li key={i}>{p}</li>)}
             </ul>
-          ) : <p className="text-xs text-emerald-600 mt-2">All skills matched!</p>}
-        </div>
-
-        {/* Experience */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
-          <div className="flex items-center gap-2 mb-2">
-            <BriefcaseBusiness size={18} className="text-blue-600"/>
-            <h3 className="font-bold">Experience Metrics</h3>
-            <span className="ml-auto font-bold">{breakdown?.experience || 0}/100</span>
-          </div>
-          {breakdown?.experience < 80 ? (
-             <p className="text-xs text-amber-600 mt-2">Add more quantifiable metrics (numbers, %, $) and action verbs.</p>
-          ) : <p className="text-xs text-emerald-600 mt-2">Strong metric usage!</p>}
-        </div>
-
-        {/* Projects */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
-          <div className="flex items-center gap-2 mb-2">
-            <FileCode size={18} className="text-blue-600"/>
-            <h3 className="font-bold">Projects</h3>
-            <span className="ml-auto font-bold">{breakdown?.projects || 0}/100</span>
-          </div>
-        </div>
-
-        {/* Structure & Formatting */}
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm md:col-span-2 lg:col-span-1">
-          <div className="flex items-center gap-2 mb-2">
-            <Layout size={18} className="text-blue-600"/>
-            <h3 className="font-bold">Structure</h3>
-            <span className="ml-auto font-bold">{breakdown?.structure || 0}/100</span>
-          </div>
-          {sectionIssues && sectionIssues.length > 0 && (
-            <ul className="text-xs text-red-600 list-disc pl-4 space-y-1 mt-2">
-              {sectionIssues.map((issue: string, i: number) => <li key={i}>{issue}</li>)}
-            </ul>
+          ) : (
+             <p className="text-xs text-emerald-600 mt-2">Looks good!</p>
+          )}
+          {data.recommendation && (
+            <p className="text-xs text-blue-600 mt-2 p-2 bg-blue-50 rounded italic">{data.recommendation}</p>
           )}
         </div>
-        
-        {/* Recommendations */}
-        {recommendations && recommendations.length > 0 && (
-          <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl shadow-sm col-span-1 md:col-span-2 lg:col-span-3">
-             <div className="flex items-center gap-2 mb-2">
-               <Sparkles size={18} className="text-blue-600"/>
-               <h3 className="font-bold text-blue-900">Priority Recommendations</h3>
-             </div>
-             <ul className="text-sm text-blue-800 list-disc pl-4 space-y-2 mt-2">
-                {recommendations.map((r: any, i: number) => (
-                  <li key={i}><b>[{r.priority}]</b> {r.text}</li>
-                ))}
-             </ul>
-          </div>
-        )}
-      </div>
-    );
+      );
+    });
   };
 
   return (
@@ -323,22 +269,57 @@ export default function ATSAnalysisPage() {
                   <p className="text-xs text-slate-500 font-bold mb-1">ATS SCORE</p>
                   <p className="text-3xl font-black">{atsScore}</p>
                 </div>
-                {analysisMode === 'jd' && atsReport && (
+                {analysisMode === 'jd' && atsReport?.matching && (
                   <div className="p-4 bg-blue-50 rounded-xl border border-blue-200 text-center">
-                    <p className="text-xs text-blue-600 font-bold mb-1">MATCHED SKILLS</p>
-                    <p className="text-3xl font-black">{(atsReport as any).matchedSkills?.length || 0}</p>
+                    <p className="text-xs text-blue-600 font-bold mb-1">MATCHED REQS</p>
+                    <p className="text-3xl font-black">{atsReport.matching.filter(m => m.status === 'MATCHED').length}</p>
                   </div>
                 )}
             </div>
           </div>
 
-          <div className="space-y-6">
-            {analysisMode === 'jd' && (
-               <JobDescriptionInput jobDescription={jobDescription} onChange={setJobDescription} onAnalyze={() => handleRunLiveJobOptimization()} isAnalyzing={isLiveOptimizing} hasResume={hasResumeData} />
-            )}
-             <h2 className="text-xl font-bold px-2">{analysisMode === 'jd' ? 'Job Match & Optimization' : 'Resume Categories Breakdown'}</h2>
-             {renderCategoryCards()}
-          </div>
+          {analysisMode === 'jd' ? (
+            <div className="space-y-6">
+               <JobDescriptionInput value={jobDescription} onChange={setJobDescription} onAnalyze={() => handleRunLiveJobOptimization()} isAnalyzing={isLiveOptimizing} />
+               {atsReport?.jdAnalysis && (
+                 <div className="bg-white p-6 rounded-2xl border shadow-sm">
+                   <h2 className="text-xl font-bold mb-4">Job Description Match Results</h2>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <h3 className="font-bold mb-2">Matched Requirements</h3>
+                        <ul className="text-sm space-y-1 text-emerald-700">
+                          {atsReport.matching?.filter(m => m.status === 'MATCHED').map((m, i) => <li key={i}>✓ {m.requirement}</li>)}
+                        </ul>
+                      </div>
+                      <div>
+                        <h3 className="font-bold mb-2">Missing Requirements</h3>
+                        <ul className="text-sm space-y-1 text-red-600">
+                          {atsReport.matching?.filter(m => m.status === 'MISSING').map((m, i) => <li key={i}>✗ {m.requirement}</li>)}
+                        </ul>
+                      </div>
+                   </div>
+                   {atsReport.projectRelevance && atsReport.projectRelevance.length > 0 && (
+                     <div className="mt-6 border-t pt-4">
+                       <h3 className="font-bold mb-3">Project Relevance</h3>
+                       {atsReport.projectRelevance.map((pr, i) => (
+                         <div key={i} className="mb-2 p-3 bg-slate-50 rounded border">
+                           <p className="font-bold">{pr.projectName} (Score: {pr.relevanceScore})</p>
+                           <p className="text-xs text-slate-600">{pr.explanation}</p>
+                         </div>
+                       ))}
+                     </div>
+                   )}
+                 </div>
+               )}
+            </div>
+          ) : (
+            <div className="space-y-6">
+               <h2 className="text-xl font-bold px-2">Resume Categories Breakdown</h2>
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {renderCategoryCards()}
+               </div>
+            </div>
+          )}
           
           <div className="flex justify-end pt-6 border-t">
             <button onClick={handleNavigateToResumeBuilder} className="bg-[#0B192C] text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2">

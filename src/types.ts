@@ -87,9 +87,10 @@ export interface CustomSectionData {
 export interface SectionNavItem {
   id: string;
   title: string;
-  type: 'personal' | 'summary' | 'experience' | 'projects' | 'skills' | 'education' | 'certificates' | 'achievements' | 'styling' | 'custom';
+  type: 'personal' | 'summary' | 'experience' | 'projects' | 'skills' | 'education' | 'certificates' | 'achievements' | 'styling' | 'custom' | string;
   iconName?: string;
   num?: string;
+  order?: number;
   visible: boolean;
   isCustom?: boolean;
 }
@@ -263,165 +264,38 @@ export interface ProjectTemplate {
   variant: number;
 }
 
-// ─── ATS Scoring Engine Types ────────────────────────────────────────────────
 
-export type ATSPriority = 'Critical' | 'High' | 'Medium' | 'Low';
-export type RuleSeverity = 'critical' | 'high' | 'medium' | 'low';
+// ─── ATS Analysis Types (Unified) ────────────────────────────────────────────────
 
-export interface ATSRuleResult {
-  id: string;
-  category: string;
-  severity: RuleSeverity;
-  passed: boolean;
-  score: number;
-  maxScore: number;
-  message: string;
-  recommendation: string | null;
+export interface ATSRecommendation {
+  text: string;
+  priority: 'High' | 'Medium' | 'Low';
 }
 
-export type ATSCategoryKey =
-  | 'formatting'
-  | 'sections'
-  | 'sectionOrder'
-  | 'keywords'
-  | 'hardSkills'
-  | 'softSkills'
-  | 'experience'
-  | 'projects'
-  | 'education'
-  | 'certificates'
-  | 'achievements'
-  | 'metrics'
-  | 'starFormat'
-  | 'actionVerbs'
-  | 'leadership'
-  | 'readability'
-  | 'bulletQuality'
-  | 'length'
-  | 'title'
-  | 'contactInfo'
-  | 'github'
-  | 'portfolio'
-  | 'linkedin'
-  | 'missingSkills'
-  | 'repeatedKeywords'
-  | 'keywordDensity'
-  | 'dateConsistency'
-  | 'grammarTypos';
-
-export interface ATSCategoryResult {
-  /** Category key matching atsRules.json scoringWeights */
-  key: ATSCategoryKey;
-  /** Human-readable category name */
-  label: string;
-  /** Score 0–100 for this category */
-  score: number;
-  /** Points earned for rules in this category */
-  pointsEarned?: number;
-  /** Maximum points available in this category */
-  pointsMax?: number;
-  /** Explanation of why this score was given (grounded in resume content) */
-  reason: string;
-  /** Specific, actionable improvement suggestion (no invented content) */
-  fixSuggestion: string;
-  /** Priority level determining fix urgency */
-  priority: ATSPriority;
-  /** Estimated overall ATS score gain if this category is fixed */
-  estimatedAtsGain: number;
-  /** Whether this passed the minimum threshold */
-  passed: boolean;
-  /** Specific sub-rules evaluated under this category */
-  rules?: ATSRuleResult[];
-}
-
-export interface JDMatchBreakdown {
-  keywordMatch: number;      // 0–100%
-  skillMatch: number;        // 0–100%
-  jobTitleMatch: number;     // 0–100%
-  responsibilityMatch: number; // 0–100%
-  technologyMatch: number;   // 0–100%
-  experienceMatch: number;   // 0–100%
-  educationMatch: number;    // 0–100%
-  semanticRelevance: number; // 0–100%
-  overallJdMatchScore: number; // 0–100% (Separate from General ATS score!)
-}
-
-export interface CategorizedMissingKeyword {
-  keyword: string;
-  category: string;
-  importance: 'Critical' | 'High' | 'Medium' | 'Low';
-  found: boolean;
-  recommended: boolean;
-  frequency: number;
-  estimatedGain: number;
-}
-
-export interface ATSFullReport {
-  /** Final weighted deterministic score 0–100 */
-  finalScore: number;
-  /** General ATS Compatibility label */
-  scoreLabel: string;
-  /** Per-category breakdown */
-  categories: Record<ATSCategoryKey, ATSCategoryResult>;
-  /** The 8 standard categories evaluated by the ATS engine */
-  standardCategories?: ATSCategoryResult[];
-  /** Complete list of rule results evaluated by deterministic engine */
-  ruleResults: ATSRuleResult[];
-  /** Breakdown of points: totalEarned and totalMax */
-  scoringBreakdown: {
-    totalPointsEarned: number;
-    totalMaxPoints: number;
+export interface ATSResult {
+  overallScore: number;
+  breakdown: {
+    keywords: number;
+    skills: number;
+    experience: number;
+    projects: number;
+    education: number;
+    structure: number;
+    formatting: number;
   };
-  /** Keywords present in job description but absent from resume */
-  missingKeywords: Array<{ keyword: string; category?: string; importance?: string; found?: boolean; recommended?: boolean; frequency: number; estimatedGain: number }>;
-  /** Detailed missing keywords list by category */
-  categorizedMissingKeywords?: CategorizedMissingKeyword[];
-  /** Keywords repeated excessively in the resume */
-  repeatedKeywords: Array<{ keyword: string; count: number }>;
-  /** Top 5 fixes sorted by estimatedAtsGain descending */
-  topFixes: ATSCategoryResult[];
-  /** JD Match breakdown if JD is provided (Kept SEPARATE from General ATS Compatibility) */
-  jdMatchBreakdown?: JDMatchBreakdown;
-  /** Whether analysis came from client engine, Claude AI, or Gemini AI */
-  analysisSource: 'client' | 'claude' | 'gemini';
-  /** ISO timestamp of analysis */
-  analyzedAt: string;
+  matchedKeywords: string[];
+  missingKeywords: {
+    keyword: string;
+    importance: 'High' | 'Medium' | 'Low';
+    reason: string;
+    recommendedLocation?: string;
+  }[];
+  matchedSkills: string[];
+  missingSkills: {
+    skill: string;
+    required: boolean;
+  }[];
+  sectionIssues: string[];
+  formattingIssues: string[];
+  recommendations: ATSRecommendation[];
 }
-
-// ─── Tailored Resume & Version Management Types ─────────────────────────────
-
-export type SuggestionStatus = 'pending' | 'preview' | 'applied' | 'rejected';
-export type SemanticConfidence = 'Strong Match' | 'Partial Match' | 'Weak Match' | 'No Match';
-
-export interface TailoringSuggestion {
-  id: string;
-  section: 'summary' | 'experience' | 'projects' | 'skills';
-  entryId?: string;
-  bulletIndex?: number;
-  type: 'action_verb' | 'star_structure' | 'jd_alignment' | 'skill_highlight' | 'section_reorder' | 'clarity';
-  originalText: string;
-  suggestedText: string;
-  reason: string;
-  impactScoreGain?: number;
-  status: SuggestionStatus;
-}
-
-export interface TailoredResumeVersion {
-  id: string;
-  originalResumeId: string;
-  title: string;
-  targetCompany: string;
-  targetRole: string;
-  jobDescriptionText: string;
-  generalAtsScore: number;
-  jdMatchScore: number;
-  jdMatchBreakdown?: JDMatchBreakdown;
-  parsedResume: ParsedResumeData;
-  suggestions: TailoringSuggestion[];
-  appliedSuggestionIds: string[];
-  createdAt: string;
-  updatedAt: string;
-  isOriginal?: boolean;
-}
-
-

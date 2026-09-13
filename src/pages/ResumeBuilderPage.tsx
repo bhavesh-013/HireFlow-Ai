@@ -26,13 +26,32 @@ import { getStoredUser, activity, isAuthenticated } from '../lib/api';
 import { createResume } from '../services/supabaseService';
 import { storageService } from '../services/storage.service';
 import { toBackendPayload } from '../lib/resumeMapping';
-import { ParsedResumeData, UploadHistoryItem, ResumeType } from '../types';
+import { ParsedResumeData, UploadHistoryItem, ResumeType, SectionNavItem, CustomSectionData } from '../types';
 import { GithubImporter } from '../components/GithubImporter';
 import ResumeEditorPage from './ResumeEditorPage';
-import { getDefaultSectionItems, getDefaultCustomSections, suggestResumeType } from '../services/section.reorder';
+import { aiService } from '../services/ai.service';
 import { parseResumeFile } from '../utils/fileParser';
 import { parseResumeText } from '../utils/resumeTextParser';
-import { analyzeResume } from '../services/ats.engine';
+
+function getDefaultSectionItems(type: 'fresher' | 'experienced' | string): SectionNavItem[] {
+  return [
+    { id: 'summary', type: 'summary', title: 'Professional Summary', visible: true, order: 0 },
+    { id: 'experience', type: 'experience', title: 'Work Experience', visible: true, order: 1 },
+    { id: 'education', type: 'education', title: 'Education', visible: true, order: 2 },
+    { id: 'skills', type: 'skills', title: 'Skills', visible: true, order: 3 },
+    { id: 'projects', type: 'projects', title: 'Projects', visible: true, order: 4 },
+    { id: 'certificates', type: 'certificates', title: 'Certificates', visible: true, order: 5 },
+    { id: 'achievements', type: 'achievements', title: 'Achievements', visible: true, order: 6 },
+  ];
+}
+
+function getDefaultCustomSections(type: string): CustomSectionData[] {
+  return [];
+}
+
+function suggestResumeType(data: ParsedResumeData): 'fresher' | 'experienced' {
+  return (data.experiences && data.experiences.length > 0) ? 'experienced' : 'fresher';
+}
 
 export default function ResumeBuilderPage() {
   const navigate = useNavigate();
@@ -112,8 +131,8 @@ export default function ResumeBuilderPage() {
     // Calculate initial ATS score immediately so the persisted resume has the canonical score from moment 0
     let initialAtsScore: number | null = null;
     try {
-      const report = analyzeResume(parsedData);
-      initialAtsScore = Math.min(report.finalScore, 99);
+      const report = await aiService.atsAnalyze(parsedData);
+      initialAtsScore = Math.min(report.overallScore || 0, 99);
       parsedData.atsScore = initialAtsScore;
     } catch (e) {
       console.warn('Initial ATS calculation on import notice:', e);
